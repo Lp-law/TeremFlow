@@ -16,6 +16,15 @@ class Settings(BaseSettings):
 
     database_url: str = Field(default="postgresql+psycopg://postgres:postgres@localhost:5432/teremflow")
 
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def _normalize_postgres_url(cls, v: str | None) -> str | None:
+        # Render (and others) give postgresql://... which makes SQLAlchemy use psycopg2.
+        # We install psycopg (v3), so force the psycopg driver when no driver is specified.
+        if v and v.startswith("postgresql://") and "+" not in v.split("?")[0]:
+            return "postgresql+psycopg://" + v[len("postgresql://") :]
+        return v
+
     # Render provides CORS_ORIGINS as a string (single URL or comma-separated). Support also JSON list.
     # NoDecode prevents pydantic-settings from attempting JSON parsing before validators run.
     cors_origins: Annotated[list[str], NoDecode] = Field(default_factory=lambda: ["http://localhost:5173"], validation_alias="CORS_ORIGINS")
