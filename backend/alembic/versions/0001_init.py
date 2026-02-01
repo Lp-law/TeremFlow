@@ -19,45 +19,52 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # ENUMs
-    userrole = postgresql.ENUM("ADMIN", "USER", name="userrole")
-    casetype = postgresql.ENUM("COURT", "DEMAND_LETTER", "SMALL_CLAIMS", name="casetype")
-    casestatus = postgresql.ENUM("OPEN", "CLOSED", name="casestatus")
-    expensecategory = postgresql.ENUM(
-        "ATTORNEY_FEE",
-        "EXPERT",
-        "MEDICAL_INFO",
-        "INVESTIGATOR",
-        "FEES",
-        "OTHER",
-        name="expensecategory",
-    )
-    expensepayer = postgresql.ENUM("CLIENT_DEDUCTIBLE", "INSURER", name="expensepayer")
-    feeeventtype = postgresql.ENUM(
-        "COURT_STAGE_1_DEFENSE",
-        "COURT_STAGE_2_DAMAGES",
-        "COURT_STAGE_3_EVIDENCE",
-        "COURT_STAGE_4_PROOFS",
-        "COURT_STAGE_5_SUMMARIES",
-        "AMENDED_DEFENSE_PARTIAL",
-        "AMENDED_DEFENSE_FULL",
-        "THIRD_PARTY_NOTICE",
-        "ADDITIONAL_PROOF_HEARING",
-        "DEMAND_FIX",
-        "DEMAND_HOURLY",
-        "SMALL_CLAIMS_MANUAL",
-        name="feeeventtype",
-    )
-    notificationtype = postgresql.ENUM(
-        "DEDUCTIBLE_NEAR_EXHAUSTION",
-        "INSURER_STARTED_PAYING",
-        "RETAINER_DUE_SOON",
-        "RETAINER_OVERDUE",
-        name="notificationtype",
-    )
-
-    for e in (userrole, casetype, casestatus, expensecategory, expensepayer, feeeventtype, notificationtype):
-        e.create(op.get_bind(), checkfirst=True)
+    # ENUMs: create only if not exists (safe for re-run after partial deploy)
+    conn = op.get_bind()
+    enums_sql = [
+        ("userrole", "ADMIN", "USER"),
+        ("casetype", "COURT", "DEMAND_LETTER", "SMALL_CLAIMS"),
+        ("casestatus", "OPEN", "CLOSED"),
+        (
+            "expensecategory",
+            "ATTORNEY_FEE",
+            "EXPERT",
+            "MEDICAL_INFO",
+            "INVESTIGATOR",
+            "FEES",
+            "OTHER",
+        ),
+        ("expensepayer", "CLIENT_DEDUCTIBLE", "INSURER"),
+        (
+            "feeeventtype",
+            "COURT_STAGE_1_DEFENSE",
+            "COURT_STAGE_2_DAMAGES",
+            "COURT_STAGE_3_EVIDENCE",
+            "COURT_STAGE_4_PROOFS",
+            "COURT_STAGE_5_SUMMARIES",
+            "AMENDED_DEFENSE_PARTIAL",
+            "AMENDED_DEFENSE_FULL",
+            "THIRD_PARTY_NOTICE",
+            "ADDITIONAL_PROOF_HEARING",
+            "DEMAND_FIX",
+            "DEMAND_HOURLY",
+            "SMALL_CLAIMS_MANUAL",
+        ),
+        (
+            "notificationtype",
+            "DEDUCTIBLE_NEAR_EXHAUSTION",
+            "INSURER_STARTED_PAYING",
+            "RETAINER_DUE_SOON",
+            "RETAINER_OVERDUE",
+        ),
+    ]
+    for row in enums_sql:
+        name, *values = row
+        vals = ", ".join(f"'{v}'" for v in values)
+        op.execute(
+            f"DO $$ BEGIN CREATE TYPE {name} AS ENUM ({vals}); "
+            "EXCEPTION WHEN duplicate_object THEN NULL; END $$"
+        )
 
     op.create_table(
         "users",
