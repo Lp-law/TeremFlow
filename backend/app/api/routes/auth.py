@@ -23,12 +23,14 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
     user = authenticate_user(db, payload.username, payload.password)
     token = create_access_token(subject=str(user.id))
     csrf = create_csrf_token()
+    # SameSite=None so cookie is sent on cross-origin requests (frontend.onrender.com -> api.onrender.com).
+    samesite = "none" if settings.environment == "production" else "lax"
     response.set_cookie(
         settings.jwt_cookie_name,
         token,
         httponly=True,
         secure=settings.environment == "production",
-        samesite="lax",
+        samesite=samesite,
         max_age=settings.jwt_expires_minutes * 60,
         path="/",
     )
@@ -38,7 +40,7 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
         csrf,
         httponly=False,
         secure=settings.environment == "production",
-        samesite="lax",
+        samesite=samesite,
         max_age=settings.jwt_expires_minutes * 60,
         path="/",
     )
