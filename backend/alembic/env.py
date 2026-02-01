@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from logging.config import fileConfig
 
 from alembic import context
@@ -20,7 +19,8 @@ target_metadata = Base.metadata
 
 
 def get_url() -> str:
-    return os.getenv("DATABASE_URL", settings.database_url)
+    # Use settings so DATABASE_URL is normalized (e.g. postgresql:// -> postgresql+psycopg://)
+    return settings.database_url
 
 
 def run_migrations_offline() -> None:
