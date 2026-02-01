@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Run from backend dir so Python finds the 'app' module (Render may run from repo root)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+export PYTHONPATH="${SCRIPT_DIR}:${PYTHONPATH:-}"
+
 echo "Running migrations..."
 alembic upgrade head
 
