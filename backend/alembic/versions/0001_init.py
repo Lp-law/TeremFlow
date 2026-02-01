@@ -20,7 +20,6 @@ depends_on = None
 
 def upgrade() -> None:
     # ENUMs: create only if not exists (safe for re-run after partial deploy)
-    conn = op.get_bind()
     enums_sql = [
         ("userrole", "ADMIN", "USER"),
         ("casetype", "COURT", "DEMAND_LETTER", "SMALL_CLAIMS"),
@@ -66,12 +65,32 @@ def upgrade() -> None:
             "EXCEPTION WHEN duplicate_object THEN NULL; END $$"
         )
 
+    userrole = postgresql.ENUM("ADMIN", "USER", name="userrole", create_type=False)
+    casetype = postgresql.ENUM("COURT", "DEMAND_LETTER", "SMALL_CLAIMS", name="casetype", create_type=False)
+    casestatus = postgresql.ENUM("OPEN", "CLOSED", name="casestatus", create_type=False)
+    expensecategory = postgresql.ENUM(
+        "ATTORNEY_FEE", "EXPERT", "MEDICAL_INFO", "INVESTIGATOR", "FEES", "OTHER",
+        name="expensecategory", create_type=False,
+    )
+    expensepayer = postgresql.ENUM("CLIENT_DEDUCTIBLE", "INSURER", name="expensepayer", create_type=False)
+    feeeventtype = postgresql.ENUM(
+        "COURT_STAGE_1_DEFENSE", "COURT_STAGE_2_DAMAGES", "COURT_STAGE_3_EVIDENCE",
+        "COURT_STAGE_4_PROOFS", "COURT_STAGE_5_SUMMARIES", "AMENDED_DEFENSE_PARTIAL",
+        "AMENDED_DEFENSE_FULL", "THIRD_PARTY_NOTICE", "ADDITIONAL_PROOF_HEARING",
+        "DEMAND_FIX", "DEMAND_HOURLY", "SMALL_CLAIMS_MANUAL",
+        name="feeeventtype", create_type=False,
+    )
+    notificationtype = postgresql.ENUM(
+        "DEDUCTIBLE_NEAR_EXHAUSTION", "INSURER_STARTED_PAYING", "RETAINER_DUE_SOON", "RETAINER_OVERDUE",
+        name="notificationtype", create_type=False,
+    )
+
     op.create_table(
         "users",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("username", sa.String(length=50), nullable=False),
         sa.Column("password_hash", sa.String(length=255), nullable=False),
-        sa.Column("role", sa.Enum(name="userrole"), nullable=False, server_default="USER"),
+        sa.Column("role", userrole, nullable=False, server_default="USER"),
         sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("true")),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
     )
@@ -81,8 +100,8 @@ def upgrade() -> None:
         "cases",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("case_reference", sa.String(length=120), nullable=False),
-        sa.Column("case_type", sa.Enum(name="casetype"), nullable=False),
-        sa.Column("status", sa.Enum(name="casestatus"), nullable=False, server_default="OPEN"),
+        sa.Column("case_type", casetype, nullable=False),
+        sa.Column("status", casestatus, nullable=False, server_default="OPEN"),
         sa.Column("open_date", sa.Date(), nullable=False),
         sa.Column("deductible_usd", sa.Numeric(14, 2), nullable=True),
         sa.Column("fx_rate_usd_ils", sa.Numeric(14, 6), nullable=True),
@@ -107,8 +126,8 @@ def upgrade() -> None:
         sa.Column("service_description", sa.Text(), nullable=False),
         sa.Column("demand_received_date", sa.Date(), nullable=False),
         sa.Column("expense_date", sa.Date(), nullable=False),
-        sa.Column("category", sa.Enum(name="expensecategory"), nullable=False),
-        sa.Column("payer", sa.Enum(name="expensepayer"), nullable=False),
+        sa.Column("category", expensecategory, nullable=False),
+        sa.Column("payer", expensepayer, nullable=False),
         sa.Column("attachment_url", sa.String(length=500), nullable=True),
         sa.Column("split_group_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("is_split_part", sa.Boolean(), nullable=False, server_default=sa.text("false")),
@@ -150,7 +169,7 @@ def upgrade() -> None:
         "fee_events",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("case_id", sa.Integer(), sa.ForeignKey("cases.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("event_type", sa.Enum(name="feeeventtype"), nullable=False),
+        sa.Column("event_type", feeeventtype, nullable=False),
         sa.Column("event_date", sa.Date(), nullable=False),
         sa.Column("quantity", sa.Integer(), nullable=False, server_default="1"),
         sa.Column("amount_override_ils_gross", sa.Numeric(14, 2), nullable=True),
@@ -177,7 +196,7 @@ def upgrade() -> None:
         "notifications",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("case_id", sa.Integer(), sa.ForeignKey("cases.id", ondelete="SET NULL"), nullable=True),
-        sa.Column("type", sa.Enum(name="notificationtype"), nullable=False),
+        sa.Column("type", notificationtype, nullable=False),
         sa.Column("title", sa.String(length=200), nullable=False),
         sa.Column("message", sa.Text(), nullable=False),
         sa.Column("severity", sa.String(length=20), nullable=False, server_default="info"),
@@ -192,7 +211,7 @@ def upgrade() -> None:
         "alert_events",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("case_id", sa.Integer(), sa.ForeignKey("cases.id", ondelete="CASCADE"), nullable=True),
-        sa.Column("type", sa.Enum(name="notificationtype"), nullable=False),
+        sa.Column("type", notificationtype, nullable=False),
         sa.Column("key", sa.String(length=200), nullable=False),
         sa.Column("last_sent_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
     )
