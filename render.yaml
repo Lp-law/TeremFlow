@@ -3,7 +3,7 @@
 
 databases:
   - name: teremflow-db
-    plan: starter
+    plan: basic-1gb
     postgresMajorVersion: 16
 
 services:
