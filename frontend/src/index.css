@@ -1,0 +1,90 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* TeremFlow theme (exact values as requested) */
+  /* Stored as "R G B" to support Tailwind opacity modifiers (e.g., bg-card/70). */
+  --bg: 12 19 36;
+  --bg2: 11 21 42;
+  --card: 8 16 33;
+  --surface: 25 32 48;
+  --border: 44 56 80;
+  --primary: 196 165 71;
+  --primary-hover: 177 144 60;
+  --text: 255 255 255;
+  --muted: 167 175 188;
+  --placeholder: 126 136 152;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: Heebo, ui-sans-serif, system-ui, Segoe UI, Arial, sans-serif;
+    color: rgb(var(--text));
+  background:
+    radial-gradient(900px 600px at 75% 25%, rgba(196, 165, 71, 0.10), transparent 55%),
+    radial-gradient(700px 520px at 15% 85%, rgba(125, 135, 255, 0.10), transparent 60%),
+      linear-gradient(180deg, rgb(var(--bg)) 0%, rgb(var(--bg2)) 55%, rgb(var(--bg)) 100%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+@layer components {
+  .input {
+    @apply w-full h-14 rounded-xl bg-surface border border-border/70 px-4 text-text placeholder:text-placeholder outline-none focus:ring-2 focus:ring-primary/60 focus:border-primary/70;
+  }
+
+  /* Calm, trustworthy UI primitives (dark, medical/financial vibe). */
+  .card {
+    @apply rounded-3xl border border-border/60 bg-card/70 backdrop-blur-xl shadow-card;
+  }
+
+  .card-soft {
+    @apply rounded-3xl border border-border/60 bg-card/40;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 font-semibold h-11 px-4 rounded-xl transition-colors outline-none focus:ring-2 focus:ring-primary/60 disabled:opacity-60 disabled:cursor-not-allowed;
+  }
+
+  .btn-primary {
+    @apply bg-primary text-bg2 hover:bg-primary-hover;
+  }
+
+  .btn-secondary {
+    @apply bg-surface border border-border/70 text-text hover:border-primary/60 hover:text-primary;
+  }
+
+  .btn-ghost {
+    @apply bg-transparent border border-border/50 text-muted hover:text-text hover:border-border/70;
+  }
+
+  .icon-btn {
+    @apply inline-flex items-center justify-center h-9 w-9 rounded-xl border border-border/50 bg-surface/40 text-muted hover:text-text hover:border-primary/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .modal-overlay {
+    @apply fixed inset-0 z-50 bg-black/60;
+  }
+
+  .modal {
+    @apply fixed inset-0 z-50 flex items-center justify-center px-6;
+  }
+
+  .modal-panel {
+    @apply relative w-full rounded-3xl border border-border/60 bg-card/90 shadow-card backdrop-blur-xl p-6;
+  }
+}

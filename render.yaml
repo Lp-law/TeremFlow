@@ -1,0 +1,54 @@
+# TeremFlow — Render Blueprint
+# After first deploy: In Dashboard set TASKS_DAILY_SECRET (same value) on BOTH teremflow-api and teremflow-daily-tasks.
+
+databases:
+  - name: teremflow-db
+    plan: starter
+    postgresMajorVersion: 16
+
+services:
+  - type: web
+    name: teremflow-api
+    runtime: python
+    plan: starter
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: bash start.sh
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: teremflow-db
+          property: connectionString
+      - key: ENVIRONMENT
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: TASKS_DAILY_SECRET
+        sync: false
+      - key: CORS_ORIGINS
+        value: https://teremflow-frontend.onrender.com
+
+  - type: web
+    name: teremflow-frontend
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm install --no-fund --no-audit && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://teremflow-api.onrender.com
+
+  - type: cron
+    name: teremflow-daily-tasks
+    runtime: node
+    schedule: "0 6 * * *" # daily 06:00 UTC
+    buildCommand: ""
+    startCommand: >
+      node -e "const api=process.env.API_URL; const tok=process.env.TASKS_DAILY_SECRET; if(!api){console.error('Missing API_URL'); process.exit(1)} if(!tok){console.error('Missing TASKS_DAILY_SECRET'); process.exit(1)} fetch(api + '/tasks/daily',{method:'POST',headers:{'X-Tasks-Token':tok}}).then(async r=>{const t=await r.text(); console.log(t); if(!r.ok){console.error('HTTP ' + r.status); process.exit(1)} process.exit(0)}).catch(e=>{console.error(e);process.exit(1)})"
+    envVars:
+      - key: API_URL
+        value: https://teremflow-api.onrender.com
+      - key: TASKS_DAILY_SECRET
+        sync: false
+
+

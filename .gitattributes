@@ -1,0 +1,2 @@
+# Ensure shell scripts use LF for Render/Linux
+backend/start.sh text eol=lf

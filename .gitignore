@@ -1,0 +1,25 @@
+# Backend
+backend/.venv
+backend/__pycache__
+backend/**/__pycache__
+backend/*.pyc
+backend/.env
+backend/dev.db
+backend/audit.db
+backend/.pytest_cache
+
+# Frontend (supplement)
+frontend/node_modules
+frontend/dist
+frontend/.env
+frontend/*.local
+
+# Local / IDE
+.env
+.env.*
+!.env.example
+cookiejar.txt
+.idea
+.vscode
+*.log
+.DS_Store
