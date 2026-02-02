@@ -36,6 +36,7 @@ export type CaseOut = {
   branch_name: string | null
   deductible_ils_gross: string | number
   retainer_snapshot_ils_gross: string | number | null
+  retainer_snapshot_through_month: string | null
   expenses_snapshot_ils_gross: string | number | null
   excess_remaining_ils_gross: string | number
   insurer_started: boolean

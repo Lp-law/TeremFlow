@@ -57,6 +57,10 @@ KNOWN_COLUMNS: dict[str, str] = {
     "retainer_snapshot_ils_gross": "retainer_snapshot_ils_gross",
     "ריטיינר שולם": "retainer_snapshot_ils_gross",
     "total retainer": "retainer_snapshot_ils_gross",
+    # retainer snapshot through month (YYYY-MM-01) — last month included in H. If omitted and H set, default = last month.
+    "retainer_snapshot_through_month": "retainer_snapshot_through_month",
+    "חודש סיום ריטיינר": "retainer_snapshot_through_month",
+    "snapshot_through": "retainer_snapshot_through_month",
     # Excel I: total non-attorney expenses (snapshot)
     "i": "expenses_snapshot_ils_gross",
     "expenses_snapshot": "expenses_snapshot_ils_gross",
@@ -163,6 +167,15 @@ def import_cases_from_excel(db: Session, file_bytes: bytes) -> dict:
             # Excel H, I: snapshots (>= 0)
             payload.retainer_snapshot_ils_gross = _parse_decimal_ge_zero(data.get("retainer_snapshot_ils_gross"), "retainer_snapshot_ils_gross")
             payload.expenses_snapshot_ils_gross = _parse_decimal_ge_zero(data.get("expenses_snapshot_ils_gross"), "expenses_snapshot_ils_gross")
+            # snapshot_through_month: if H set and not in Excel, default = last month (accruals from this month)
+            if payload.retainer_snapshot_ils_gross is not None:
+                if data.get("retainer_snapshot_through_month") not in (None, ""):
+                    payload.retainer_snapshot_through_month = _parse_date(data["retainer_snapshot_through_month"])
+                else:
+                    today = dt.date.today()
+                    first_this_month = dt.date(today.year, today.month, 1)
+                    last_day_prev = first_this_month - dt.timedelta(days=1)
+                    payload.retainer_snapshot_through_month = dt.date(last_day_prev.year, last_day_prev.month, 1)
             create_case(db, payload)
             created += 1
         except HTTPException as e:

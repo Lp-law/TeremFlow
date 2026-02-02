@@ -48,17 +48,26 @@ export function DashboardPage() {
     try {
       const { blob, filename, backupId } = await apiDownload('/backups/export', { method: 'POST' })
 
+      if (!blob || blob.size === 0) {
+        throw new Error('השרת החזיר קובץ ריק')
+      }
+
+      const safeName = filename || 'teremflow-backup.zip'
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = filename || 'teremflow-backup.zip'
+      a.download = safeName
+      a.style.display = 'none'
       document.body.appendChild(a)
       a.click()
-      a.remove()
-      setTimeout(() => URL.revokeObjectURL(url), 1000)
+      document.body.removeChild(a)
+      setTimeout(() => URL.revokeObjectURL(url), 2000)
 
       await refreshLastBackup()
       return backupId
+    } catch (e: any) {
+      setBackupError(e?.message || 'שגיאה בהורדת גיבוי')
+      throw e
     } finally {
       setIsBackingUp(false)
     }
@@ -79,7 +88,10 @@ export function DashboardPage() {
             <div className="text-sm text-muted mt-1">שלום {user?.username}</div>
           </div>
           <button
-            onClick={() => setShowLogoutModal(true)}
+            onClick={() => {
+              setBackupError(null)
+              setShowLogoutModal(true)
+            }}
             className="btn btn-secondary"
           >
             התנתקות
@@ -91,7 +103,7 @@ export function DashboardPage() {
             <div className="text-right">
               <div className="text-lg font-semibold">גיבוי</div>
               {backupError ? (
-                <div className="text-sm text-danger mt-1">{backupError}</div>
+                <div className="text-sm text-red-300 mt-1">{backupError}</div>
               ) : lastBackup && lastBackup.id !== 0 ? (
                 <div className="text-sm text-muted mt-1">
                   גיבוי אחרון: {fmt.format(new Date(lastBackup.created_at))} • {lastBackup.created_by_username}
@@ -102,7 +114,13 @@ export function DashboardPage() {
             </div>
             <button
               disabled={isBackingUp}
-              onClick={() => downloadBackup()}
+              onClick={async () => {
+                try {
+                  await downloadBackup()
+                } catch {
+                  /* error shown via backupError */
+                }
+              }}
               className="btn btn-primary"
             >
               {isBackingUp ? 'מכין גיבוי…' : 'הורדת גיבוי עכשיו'}
@@ -133,12 +151,15 @@ export function DashboardPage() {
 
       {showLogoutModal ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-          <div className="w-full max-w-lg rounded-3xl border border-border/60 bg-surface p-6 shadow-card">
+          <div className="relative z-[51] w-full max-w-lg rounded-3xl border border-border/60 bg-surface p-6 shadow-card">
             <div className="text-right">
               <div className="text-xl font-bold">התנתקות</div>
               <div className="text-sm text-muted mt-2">
                 לפני התנתקות חובה לבצע גיבוי ולהוריד אותו למחשב, כדי שניתן יהיה לשחזר מידע בקלות במקרה תקלה.
               </div>
+              {backupError ? (
+                <div className="mt-3 text-sm text-red-300">{backupError}</div>
+              ) : null}
             </div>
 
             <div className="mt-5 flex flex-col md:flex-row gap-3 md:justify-end">
@@ -153,10 +174,10 @@ export function DashboardPage() {
                 onClick={async () => {
                   try {
                     await backupAndLogout()
-                  } catch (e: any) {
-                    setBackupError(e?.message || 'שגיאה')
-                  } finally {
                     setShowLogoutModal(false)
+                  } catch (e: any) {
+                    setBackupError(e?.message || 'שגיאה — נא לנסות שוב')
+                    /* keep modal open so user can retry */
                   }
                 }}
                 className="btn btn-primary"

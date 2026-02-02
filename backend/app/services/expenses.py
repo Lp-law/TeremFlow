@@ -31,35 +31,38 @@ def get_case_deductible_remaining(db: Session, case: Case) -> Decimal:
 def get_case_excess_remaining(db: Session, case: Case) -> Decimal:
     """
     Excel P = M - J.
-    When retainer_snapshot exists (snapshot mode): J = retainer_snapshot + expenses_snapshot. Ignore accruals/payments.
-    Otherwise: J = other_expenses + retainer_paid (from Expense rows and RetainerPayment).
+    J = retainer (past+future) + expenses (snapshot+other).
+    - retainer_snapshot = past retainer; RetainerPayment = future retainer. No double count.
+    - expenses_snapshot + other_expenses (Expense rows).
     """
+    from app.models.retainer import RetainerPayment
+
     m = Decimal(str(case.deductible_ils_gross))
 
+    retainer_paid = (
+        db.query(func.coalesce(func.sum(RetainerPayment.amount_ils_gross), 0))
+        .filter(RetainerPayment.case_id == case.id)
+        .scalar()
+    )
+    retainer_paid = Decimal(str(retainer_paid))
+
+    other_expenses = (
+        db.query(func.coalesce(func.sum(Expense.amount_ils_gross), 0))
+        .filter(
+            Expense.case_id == case.id,
+            Expense.payer == ExpensePayer.CLIENT_DEDUCTIBLE,
+            Expense.category != ExpenseCategory.ATTORNEY_FEE,
+        )
+        .scalar()
+    )
+    other_expenses = Decimal(str(other_expenses))
+    expenses_snapshot = Decimal(str(case.expenses_snapshot_ils_gross or 0))
+
+    retainer_total = retainer_paid
     if case.retainer_snapshot_ils_gross is not None:
-        # Snapshot mode: J = H + I only
-        retainer_snapshot = Decimal(str(case.retainer_snapshot_ils_gross))
-        expenses_snapshot = Decimal(str(case.expenses_snapshot_ils_gross or 0))
-        j = q_ils(retainer_snapshot + expenses_snapshot)
-    else:
-        from app.models.retainer import RetainerPayment
+        retainer_total = q_ils(Decimal(str(case.retainer_snapshot_ils_gross)) + retainer_paid)
 
-        other_expenses = (
-            db.query(func.coalesce(func.sum(Expense.amount_ils_gross), 0))
-            .filter(
-                Expense.case_id == case.id,
-                Expense.payer == ExpensePayer.CLIENT_DEDUCTIBLE,
-                Expense.category != ExpenseCategory.ATTORNEY_FEE,
-            )
-            .scalar()
-        )
-        retainer_paid = (
-            db.query(func.coalesce(func.sum(RetainerPayment.amount_ils_gross), 0))
-            .filter(RetainerPayment.case_id == case.id)
-            .scalar()
-        )
-        j = q_ils(Decimal(str(other_expenses)) + Decimal(str(retainer_paid)))
-
+    j = q_ils(retainer_total + expenses_snapshot + other_expenses)
     remaining = q_ils(m - j)
     return max(Decimal("0.00"), remaining)
 

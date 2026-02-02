@@ -177,3 +177,42 @@ def test_excess_without_snapshot_unchanged(db: Session):
 
     # Same as before: J = 1000 + 500 = 1500, P = 8500
     assert get_case_excess_remaining(db, c) == Decimal("8500.00")
+
+
+def test_excess_snapshot_plus_payments_no_double_count(db: Session):
+    """Snapshot (past) + RetainerPayment (future): J = snapshot + payments + expenses. No double count."""
+    c = Case(
+        case_reference="test-excess-snapshot-payments",
+        case_type=CaseType.COURT,
+        status=CaseStatus.OPEN,
+        open_date=dt.date(2025, 1, 15),
+        retainer_anchor_date=dt.date(2025, 7, 1),
+        branch_name=None,
+        deductible_ils_gross=Decimal("30000.00"),
+        insurer_started=False,
+        retainer_snapshot_ils_gross=Decimal("5000.00"),
+        retainer_snapshot_through_month=dt.date(2024, 12, 1),
+        expenses_snapshot_ils_gross=Decimal("2000.00"),
+    )
+    db.add(c)
+    db.commit()
+    db.refresh(c)
+
+    db.add(RetainerPayment(case_id=c.id, payment_date=dt.date(2025, 2, 1), amount_ils_gross=Decimal("1115.10")))
+    db.add(
+        Expense(
+            case_id=c.id,
+            supplier_name="Expert",
+            amount_ils_gross=Decimal("500.00"),
+            service_description="Report",
+            demand_received_date=dt.date(2025, 2, 1),
+            expense_date=dt.date(2025, 2, 1),
+            category=ExpenseCategory.EXPERT,
+            payer=ExpensePayer.CLIENT_DEDUCTIBLE,
+        )
+    )
+    db.commit()
+
+    # J = snapshot(5000) + payment(1115.10) + expenses_snapshot(2000) + other_expense(500) = 8615.10
+    # P = 30000 - 8615.10 = 21384.90
+    assert get_case_excess_remaining(db, c) == Decimal("21384.90")

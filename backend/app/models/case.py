@@ -37,6 +37,8 @@ class Case(Base):
 
     # Historical retainer from import (Excel H). If set, counts against excess. Null for new cases.
     retainer_snapshot_ils_gross: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    # Last month (YYYY-MM-01) included in retainer snapshot. If set, accruals start from next month.
+    retainer_snapshot_through_month: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
     # Historical non-attorney expenses from import (Excel I). If set (with H), snapshot mode.
     expenses_snapshot_ils_gross: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
 

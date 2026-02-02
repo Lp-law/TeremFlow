@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import logging
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
@@ -13,6 +14,7 @@ from app.models.retainer import RetainerAccrual
 from app.services.deductible import q_ils
 from app.services.email import send_email
 from app.services.expenses import get_case_excess_remaining
+from app.services.retainer import ensure_all_cases_accruals_up_to_now
 
 
 def _has_alert(db: Session, *, type_: NotificationType, key: str) -> bool:
@@ -30,8 +32,13 @@ def _create_notification(db: Session, *, type_: NotificationType, title: str, me
 
 
 def run_daily_alerts(db: Session) -> dict:
+    logger = logging.getLogger(__name__)
     today = dt.date.today()
     due_soon_until = today + dt.timedelta(days=7)
+
+    # Retainer roll-forward: ensure open cases (no snapshot) have accruals up to current month
+    cases_scanned, accruals_added = ensure_all_cases_accruals_up_to_now(db)
+    logger.info("daily_alerts: retainer_roll_forward done cases_scanned=%d accruals_added=%d", cases_scanned, accruals_added)
 
     sent = 0
 

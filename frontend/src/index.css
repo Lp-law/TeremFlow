@@ -84,7 +84,8 @@ body {
     @apply fixed inset-0 z-50 flex items-center justify-center px-6;
   }
 
+  /* z-[51] ensures panel is above overlay (z-50) so inputs/buttons remain interactive */
   .modal-panel {
-    @apply relative w-full rounded-3xl border border-border/60 bg-card/90 shadow-card backdrop-blur-xl p-6;
+    @apply relative z-[51] w-full rounded-3xl border border-border/60 bg-card/90 shadow-card backdrop-blur-xl p-6;
   }
 }

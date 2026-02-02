@@ -247,6 +247,10 @@ function OverviewTab({ caseItem, currentLegalStage }: { caseItem: CaseOut; curre
         <dl className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
           <ReadOnlyRow label="השתתפות עצמית (ברוטו)" value={formatILS(caseItem.deductible_ils_gross)} />
           <ReadOnlyRow label="שכ״ט ששולם עד כה" value={caseItem.retainer_snapshot_ils_gross != null ? formatILS(caseItem.retainer_snapshot_ils_gross) : '—'} />
+          <ReadOnlyRow
+            label="חודש סיום snapshot"
+            value={caseItem.retainer_snapshot_through_month ?? '—'}
+          />
           <ReadOnlyRow label="הוצאות ששולמו עד כה" value={caseItem.expenses_snapshot_ils_gross != null ? formatILS(caseItem.expenses_snapshot_ils_gross) : '—'} />
           <ReadOnlyRow label="יתרת השתתפות עצמית" value={formatILS(caseItem.excess_remaining_ils_gross)} />
         </dl>
