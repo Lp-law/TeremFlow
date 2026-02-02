@@ -36,19 +36,22 @@ def create_app() -> FastAPI:
     def health():
         return {"status": "ok"}
 
+    _CSRF_EXEMPT_PATHS = frozenset({"/auth/login", "/auth/logout", "/import/excel"})
+
     @app.middleware("http")
     async def _csrf_middleware(request: Request, call_next):
         """
         Production CSRF protection for cookie-auth endpoints.
         - Only enforced in production.
         - Only for unsafe methods (OPTIONS is preflight, skip).
-        - Skip for /import/excel (multipart; frontend may not send X-CSRF-Token).
+        - Skip for exempt paths: /auth/login, /auth/logout, /import/excel.
         - Only when the auth cookie is present.
         """
         if settings.environment == "production":
             if request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"}:
-                if request.url.path.endswith("/import/excel"):
-                    pass  # multipart file upload; skip CSRF for compatibility
+                path = request.url.path.rstrip("/") or "/"
+                if path in _CSRF_EXEMPT_PATHS:
+                    pass  # exempt: login, logout, multipart import
                 else:
                     has_session = bool(request.cookies.get(settings.jwt_cookie_name))
                     if has_session:
