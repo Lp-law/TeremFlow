@@ -158,7 +158,13 @@ export function CaseDetailsPage() {
                 <ExpensesTab caseItem={caseItem} expenses={expenses} />
               ) : null}
 
-              {tab === 'retainer' ? <RetainerPanel caseId={caseItem.id} retainerAnchorDate={caseItem.retainer_anchor_date} /> : null}
+              {tab === 'retainer' ? (
+                <RetainerPanel
+                  caseId={caseItem.id}
+                  retainerAnchorDate={caseItem.retainer_anchor_date}
+                  retainerSnapshotIlsGross={caseItem.retainer_snapshot_ils_gross}
+                />
+              ) : null}
               {tab === 'fees' ? <FeesPanel caseId={caseItem.id} /> : null}
             </div>
           </div>
@@ -438,13 +444,24 @@ function Field({
   )
 }
 
-function RetainerPanel({ caseId, retainerAnchorDate }: { caseId: number; retainerAnchorDate: string }) {
+function RetainerPanel({
+  caseId,
+  retainerAnchorDate,
+  retainerSnapshotIlsGross,
+}: {
+  caseId: number
+  retainerAnchorDate: string
+  retainerSnapshotIlsGross: string | number | null
+}) {
   const [summary, setSummary] = useState<RetainerSummary | null>(null)
   const [accruals, setAccruals] = useState<RetainerAccrual[]>([])
   const [payments, setPayments] = useState<RetainerPayment[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isAddPaymentOpen, setIsAddPaymentOpen] = useState(false)
+
+  const hasHistoricalSnapshot =
+    retainerSnapshotIlsGross != null && Number(retainerSnapshotIlsGross) > 0
 
   async function load() {
     setError(null)
@@ -477,6 +494,41 @@ function RetainerPanel({ caseId, retainerAnchorDate }: { caseId: number; retaine
 
   return (
     <div className="space-y-6">
+      {hasHistoricalSnapshot ? (
+        <div className="card-soft p-5">
+          <div className="text-right mb-4">
+            <div className="font-semibold">ריטיינר עבר (ייבוא)</div>
+            <div className="text-sm text-muted mt-1">סכום היסטורי — לקריאה בלבד, אינו משפיע על אקרואלים או תשלומים</div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-muted">
+                <tr className="border-b border-border/60">
+                  <th className="text-right py-3">תאריך</th>
+                  <th className="text-right py-3">תיאור</th>
+                  <th className="text-right py-3">סכום</th>
+                  <th className="text-right py-3">מקור</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="border-b border-border/30 bg-muted/20">
+                  <td className="py-3">—</td>
+                  <td className="py-3">ריטיינר עבר (ייבוא)</td>
+                  <td className="py-3">{formatILS(retainerSnapshotIlsGross)}</td>
+                  <td className="py-3">
+                    <Badge label="עבר" variant="info" />
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+
+      {hasHistoricalSnapshot ? (
+        <h3 className="text-sm font-semibold text-muted">ריטיינר עתידי — אקרואלים ותשלומים</h3>
+      ) : null}
+
       {summary ? (
         <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
           <MiniStat title="נצבר" value={formatILS(summary.retainer_accrued_total_ils_gross)} />
