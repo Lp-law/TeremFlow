@@ -120,12 +120,12 @@ export function CaseDetailsPage() {
                 <div className="text-right">
                   <div className="text-lg font-semibold">{caseItem.case_reference}</div>
                 </div>
-                {tab !== 'overview' ? (
+                {tab === 'expenses' ? (
                   <button
                     onClick={() => setIsModalOpen(true)}
                     className="btn btn-primary h-12 px-5 rounded-2xl"
                   >
-                    הוספת הוצאה
+                    הוספת הוצאה חדשה
                   </button>
                 ) : null}
               </div>
@@ -155,37 +155,7 @@ export function CaseDetailsPage() {
               ) : null}
 
               {tab === 'expenses' ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="text-muted">
-                      <tr className="border-b border-border/60">
-                        <th className="text-right py-3">תאריך</th>
-                        <th className="text-right py-3">ספק</th>
-                        <th className="text-right py-3">קטגוריה</th>
-                        <th className="text-right py-3">משלם</th>
-                        <th className="text-right py-3">סכום (כולל מע"מ)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {expenses.map((e) => (
-                        <tr key={e.id} className="border-b border-border/30 hover:bg-surface/30">
-                          <td className="py-3">{e.expense_date}</td>
-                          <td className="py-3">{e.supplier_name}</td>
-                          <td className="py-3">{CATEGORY_LABEL[e.category]}</td>
-                          <td className="py-3">{e.payer === 'INSURER' ? 'המבטח' : 'השתתפות עצמית'}</td>
-                          <td className="py-3">{formatILS(e.amount_ils_gross)}</td>
-                        </tr>
-                      ))}
-                      {expenses.length === 0 ? (
-                        <tr>
-                          <td colSpan={5} className="py-10 text-center text-muted">
-                            אין הוצאות
-                          </td>
-                        </tr>
-                      ) : null}
-                    </tbody>
-                  </table>
-                </div>
+                <ExpensesTab caseItem={caseItem} expenses={expenses} />
               ) : null}
 
               {tab === 'retainer' ? <RetainerPanel caseId={caseItem.id} retainerAnchorDate={caseItem.retainer_anchor_date} /> : null}
@@ -250,6 +220,58 @@ function ReadOnlyRow({ label, value }: { label: string; value: string }) {
     <div>
       <dt className="text-xs text-muted">{label}</dt>
       <dd className="mt-0.5 font-medium">{value}</dd>
+    </div>
+  )
+}
+
+function ExpensesTab({ caseItem, expenses }: { caseItem: CaseOut; expenses: ExpenseOut[] }) {
+  const hasHistorical =
+    caseItem.expenses_snapshot_ils_gross != null && Number(caseItem.expenses_snapshot_ils_gross) > 0
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead className="text-muted">
+          <tr className="border-b border-border/60">
+            <th className="text-right py-3">תאריך</th>
+            <th className="text-right py-3">תיאור</th>
+            <th className="text-right py-3">סכום (כולל מע״מ)</th>
+            <th className="text-right py-3">מקור</th>
+          </tr>
+        </thead>
+        <tbody>
+          {hasHistorical ? (
+            <tr className="border-b border-border/30 bg-muted/20">
+              <td className="py-3">—</td>
+              <td className="py-3">הוצאות עבר (ייבוא)</td>
+              <td className="py-3">{formatILS(caseItem.expenses_snapshot_ils_gross)}</td>
+              <td className="py-3">
+                <Badge label="עבר" variant="info" />
+              </td>
+            </tr>
+          ) : null}
+          {expenses.map((e) => (
+            <tr key={e.id} className="border-b border-border/30 hover:bg-surface/30">
+              <td className="py-3">{e.expense_date}</td>
+              <td className="py-3">
+                {e.supplier_name}
+                {e.service_description ? ` — ${e.service_description}` : ''}
+              </td>
+              <td className="py-3">{formatILS(e.amount_ils_gross)}</td>
+              <td className="py-3">
+                <Badge label="חדש" variant="success" />
+              </td>
+            </tr>
+          ))}
+          {!hasHistorical && expenses.length === 0 ? (
+            <tr>
+              <td colSpan={4} className="py-10 text-center text-muted">
+                אין הוצאות
+              </td>
+            </tr>
+          ) : null}
+        </tbody>
+      </table>
     </div>
   )
 }
