@@ -3,7 +3,22 @@ import { Link } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
 import { downloadTextFile, toCsv } from '../lib/csv'
 import { formatILS } from '../lib/format'
-import type { CaseOut, CaseType } from '../lib/types'
+import type { CaseOut, CaseType, FeeEvent } from '../lib/types'
+
+const FEE_EVENT_LABEL: Record<string, string> = {
+  COURT_STAGE_1_DEFENSE: 'שלב 1 — כתב הגנה',
+  COURT_STAGE_2_DAMAGES: 'שלב 2 — חישובי נזק',
+  COURT_STAGE_3_EVIDENCE: 'שלב 3 — הגשת ראיות',
+  COURT_STAGE_4_PROOFS: 'שלב 4 — הוכחות',
+  COURT_STAGE_5_SUMMARIES: 'שלב 5 — סיכומים',
+  AMENDED_DEFENSE_PARTIAL: 'כתב הגנה מתוקן (חלקי)',
+  AMENDED_DEFENSE_FULL: 'כתב הגנה מתוקן (מלא)',
+  THIRD_PARTY_NOTICE: 'הודעת צד ג׳',
+  ADDITIONAL_PROOF_HEARING: 'ישיבת הוכחות נוספת',
+  DEMAND_FIX: 'מכתב דרישה — קבוע',
+  DEMAND_HOURLY: 'מכתב דרישה — שעתי',
+  SMALL_CLAIMS_MANUAL: 'תביעות קטנות — ידני',
+}
 
 const CASE_TYPE_LABEL: Record<string, string> = {
   COURT: 'תיק ביהמ"ש',
@@ -29,6 +44,7 @@ const defaultCreateForm: CreateCaseForm = {
 
 export function CasesPage() {
   const [items, setItems] = useState<CaseOut[]>([])
+  const [stageByCaseId, setStageByCaseId] = useState<Record<number, string>>({})
   const [query, setQuery] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -44,6 +60,23 @@ export function CasesPage() {
     try {
       const data = await apiFetch<CaseOut[]>('/cases/')
       setItems(data)
+      const stages: Record<number, string> = {}
+      await Promise.all(
+        data.map(async (c) => {
+          try {
+            const fees = await apiFetch<FeeEvent[]>(`/cases/${c.id}/fees/`)
+            if (fees.length > 0) {
+              const latest = [...fees].sort(
+                (a, b) => new Date(b.event_date).getTime() - new Date(a.event_date).getTime()
+              )[0]
+              stages[c.id] = FEE_EVENT_LABEL[latest.event_type] || latest.event_type
+            }
+          } catch {
+            // ignore per-case fee fetch errors
+          }
+        })
+      )
+      setStageByCaseId(stages)
     } catch (e: any) {
       setError(e?.message || 'שגיאה')
     } finally {
@@ -67,35 +100,19 @@ export function CasesPage() {
     try {
       const data = await apiFetch<CaseOut[]>('/cases/')
       const rows = data.map((c) => ({
-        id: c.id,
         case_reference: c.case_reference,
-        case_type: c.case_type,
-        status: c.status,
-        open_date: c.open_date,
-        deductible_usd: (c as any).deductible_usd ?? '',
-        fx_rate_usd_ils: (c as any).fx_rate_usd_ils ?? '',
-        fx_date_used: (c as any).fx_date_used ?? '',
-        fx_source: (c as any).fx_source ?? '',
-        deductible_ils_gross: c.deductible_ils_gross,
-        insurer_started: c.insurer_started,
-        insurer_start_date: c.insurer_start_date ?? '',
+        retainer_snapshot_ils_gross: c.retainer_snapshot_ils_gross ?? '',
+        expenses_snapshot_ils_gross: c.expenses_snapshot_ils_gross ?? '',
         excess_remaining_ils_gross: c.excess_remaining_ils_gross,
+        status: c.status,
       }))
 
       const columns = [
-        'id',
         'case_reference',
-        'case_type',
-        'status',
-        'open_date',
-        'deductible_usd',
-        'fx_rate_usd_ils',
-        'fx_date_used',
-        'fx_source',
-        'deductible_ils_gross',
-        'insurer_started',
-        'insurer_start_date',
+        'retainer_snapshot_ils_gross',
+        'expenses_snapshot_ils_gross',
         'excess_remaining_ils_gross',
+        'status',
       ]
 
       const csv = toCsv(rows, columns, ',')
@@ -196,14 +213,15 @@ export function CasesPage() {
 
           {!isLoading ? (
             <div className="mt-6 overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-sm" dir="rtl">
                 <thead className="text-muted">
                   <tr className="border-b border-border/60">
-                    <th className="text-right py-3">תיק</th>
-                    <th className="text-right py-3">סוג</th>
-                    <th className="text-right py-3">סטטוס</th>
+                    <th className="text-right py-3">שם התיק</th>
+                    <th className="text-right py-3">שלב ההליך</th>
+                    <th className="text-right py-3">שכ״ט ששולם עד כה</th>
+                    <th className="text-right py-3">הוצאות ששולמו עד כה</th>
                     <th className="text-right py-3">יתרת השתתפות עצמית</th>
-                    <th className="text-right py-3">מצב משלם</th>
+                    <th className="text-right py-3">סטטוס</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -213,17 +231,21 @@ export function CasesPage() {
                         <Link to={`/cases/${c.id}`} className="text-primary hover:underline">
                           {c.case_reference}
                         </Link>
-                        <div className="text-xs text-muted">#{c.id}</div>
                       </td>
-                      <td className="py-3">{CASE_TYPE_LABEL[c.case_type] || c.case_type}</td>
-                      <td className="py-3">{c.status === 'OPEN' ? 'פתוח' : 'סגור'}</td>
+                      <td className="py-3">{stageByCaseId[c.id] ?? 'לא הוגדר'}</td>
+                      <td className="py-3">
+                        {c.retainer_snapshot_ils_gross != null ? formatILS(c.retainer_snapshot_ils_gross) : '—'}
+                      </td>
+                      <td className="py-3">
+                        {c.expenses_snapshot_ils_gross != null ? formatILS(c.expenses_snapshot_ils_gross) : '—'}
+                      </td>
                       <td className="py-3">{formatILS(c.excess_remaining_ils_gross)}</td>
-                      <td className="py-3">{c.insurer_started ? 'המבטח משלם' : 'טר״מ/השתתפות עצמית'}</td>
+                      <td className="py-3">{c.status === 'OPEN' ? 'פתוח' : 'סגור'}</td>
                     </tr>
                   ))}
                   {filtered.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="py-10 text-center text-muted">
+                      <td colSpan={6} className="py-10 text-center text-muted">
                         אין תוצאות
                       </td>
                     </tr>
