@@ -13,5 +13,6 @@ class UserOut(BaseModel):
     id: int
     username: str
     role: str
+    csrf_token: str  # For X-CSRF-Token header on mutating requests (cross-origin safe)
 
 

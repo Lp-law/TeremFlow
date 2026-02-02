@@ -1,14 +1,21 @@
 export const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000'
 
-function getCookie(name: string): string | undefined {
+let csrfTokenStore: string | null = null
+
+export function setCsrfToken(token: string | null) {
+  csrfTokenStore = token
+}
+
+function getCsrfToken(): string | undefined {
+  if (csrfTokenStore) return csrfTokenStore
   if (typeof document === 'undefined') return undefined
-  const m = document.cookie.match(new RegExp('(?:^|; )' + name.replace(/[-.*+?^${}()|[\\]\\\\]/g, '\\\\$&') + '=([^;]*)'))
+  const m = document.cookie.match(new RegExp('(?:^|; )' + 'teremflow_csrf'.replace(/[-.*+?^${}()|[\\]\\\\]/g, '\\\\$&') + '=([^;]*)'))
   return m ? decodeURIComponent(m[1]) : undefined
 }
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const method = (init?.method || 'GET').toUpperCase()
-  const csrf = getCookie('teremflow_csrf')
+  const csrf = getCsrfToken()
 
   const res = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
@@ -56,7 +63,7 @@ export async function apiDownload(
   init?: RequestInit
 ): Promise<{ blob: Blob; filename?: string; backupId?: string }> {
   const method = (init?.method || 'GET').toUpperCase()
-  const csrf = getCookie('teremflow_csrf')
+  const csrf = getCsrfToken()
 
   const res = await fetch(`${API_BASE_URL}${path}`, {
     ...init,

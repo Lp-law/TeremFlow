@@ -97,6 +97,9 @@ def export_backup(user: User = Depends(require_auth), db: Session = Depends(get_
     db.commit()
     db.refresh(rec)
 
+    from app.services.activity_log import log_activity
+    log_activity(db, action="backup_export", entity_type="backup", entity_id=rec.id, user_id=user.id, details={"file_name": filename, "size_bytes": len(data)})
+
     headers = {
         "Content-Disposition": f'attachment; filename="{filename}"',
         "X-Backup-Id": str(rec.id),

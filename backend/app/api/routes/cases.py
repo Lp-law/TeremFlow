@@ -29,8 +29,12 @@ def get_case(case_id: int, db: Session = Depends(get_db), _=Depends(require_auth
 
 
 @router.post("/", response_model=CaseOut)
-def create_case(payload: CaseCreate, db: Session = Depends(get_db), _=Depends(require_auth)):
+def create_case(
+    payload: CaseCreate, db: Session = Depends(get_db), user=Depends(require_auth)
+):
     c = case_service.create_case(db, payload)
+    from app.services.activity_log import log_activity
+    log_activity(db, action="case_create", entity_type="case", entity_id=c.id, user_id=user.id)
     return CaseOut(**case_service.to_case_out(db, c))
 
 

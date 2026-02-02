@@ -55,7 +55,9 @@ def list_payments(case_id: int, db: Session = Depends(get_db), _=Depends(require
 
 
 @router.post("/payments", response_model=list[RetainerPaymentOut])
-def add_payment(case_id: int, payload: RetainerPaymentCreate, db: Session = Depends(get_db), _=Depends(require_auth)):
+def add_payment(
+    case_id: int, payload: RetainerPaymentCreate, db: Session = Depends(get_db), user=Depends(require_auth)
+):
     p = RetainerPayment(case_id=case_id, payment_date=payload.payment_date, amount_ils_gross=payload.amount_ils_gross)
     db.add(p)
     db.commit()
@@ -63,6 +65,9 @@ def add_payment(case_id: int, payload: RetainerPaymentCreate, db: Session = Depe
 
     retainer_service.allocate_payments_to_accruals(db, case_id=case_id)
     fee_service.apply_retainer_credit(db, case_id=case_id)
+
+    from app.services.activity_log import log_activity
+    log_activity(db, action="retainer_payment_add", entity_type="retainer_payment", entity_id=p.id, user_id=user.id, details={"case_id": case_id})
 
     items = (
         db.query(RetainerPayment)

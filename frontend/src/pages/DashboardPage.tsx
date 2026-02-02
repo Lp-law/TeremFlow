@@ -11,12 +11,23 @@ type BackupLastOut = {
   size_bytes: number
 }
 
+type ActivityItem = {
+  id: number
+  created_at: string
+  action: string
+  action_label: string
+  entity_type: string
+  entity_id: number | null
+  username: string | null
+}
+
 export function DashboardPage() {
   const { user, logout } = useAuth()
   const [lastBackup, setLastBackup] = useState<BackupLastOut | null>(null)
   const [backupError, setBackupError] = useState<string | null>(null)
   const [isBackingUp, setIsBackingUp] = useState(false)
   const [showLogoutModal, setShowLogoutModal] = useState(false)
+  const [activityItems, setActivityItems] = useState<ActivityItem[]>([])
 
   const fmt = useMemo(
     () =>
@@ -37,8 +48,18 @@ export function DashboardPage() {
     }
   }
 
+  async function refreshActivity() {
+    try {
+      const data = await apiFetch<ActivityItem[]>('/activity/latest?limit=10')
+      setActivityItems(data)
+    } catch {
+      setActivityItems([])
+    }
+  }
+
   useEffect(() => {
     refreshLastBackup()
+    refreshActivity()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -96,8 +117,12 @@ export function DashboardPage() {
   return (
     <div className="min-h-screen w-full px-6 py-10">
       <div className="mx-auto w-full max-w-6xl">
-        <div className="flex items-center justify-between gap-4">
-          <div className="text-right">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-3 order-first">
+            <img src="/logo-trm.png" alt="טר״מ" className="h-11 w-auto object-contain" />
+            <img src="/logo-law-firm.png" alt="משרד עורכי דין" className="h-9 w-auto object-contain opacity-90" />
+          </div>
+          <div className="text-right order-2 flex-1 min-w-0">
             <div className="text-2xl font-bold">דשבורד</div>
             <div className="text-sm text-muted mt-1">שלום {user?.username}</div>
           </div>
@@ -106,7 +131,7 @@ export function DashboardPage() {
               setBackupError(null)
               setShowLogoutModal(true)
             }}
-            className="btn btn-secondary"
+            className="btn btn-secondary order-3"
           >
             התנתקות
           </button>
@@ -168,8 +193,26 @@ export function DashboardPage() {
 
         <div className="mt-8 card p-6">
           <div className="text-right">
-            <div className="text-lg font-semibold">קיצורי דרך</div>
-            <div className="text-sm text-muted mt-1">בשלב זה ה־MVP מציג בסיס UI; מסכים נוספים יתווספו מיד אחרי חיבור כל ה־API.</div>
+            <div className="text-lg font-semibold">יומן אירועים</div>
+            <div className="text-sm text-muted mt-1">פעולות אחרונות במערכת</div>
+          </div>
+          <div className="mt-4 space-y-2">
+            {activityItems.length === 0 ? (
+              <div className="text-sm text-muted py-4">אין אירועים עדיין</div>
+            ) : (
+              activityItems.map((a) => (
+                <div
+                  key={a.id}
+                  className="flex items-center justify-between gap-4 py-2 border-b border-border/30 last:border-0 text-sm text-right"
+                >
+                  <span className="text-muted shrink-0">
+                    {a.created_at ? fmt.format(new Date(a.created_at)) : '—'}
+                  </span>
+                  <span className="font-medium flex-1">{a.action_label}</span>
+                  <span className="text-muted shrink-0">{a.username ?? '—'}</span>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>

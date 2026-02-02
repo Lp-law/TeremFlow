@@ -30,8 +30,12 @@ def list_fee_events(case_id: int, db: Session = Depends(get_db), _=Depends(requi
 
 
 @router.post("/", response_model=FeeEventOut)
-def add_fee_event(case_id: int, payload: FeeEventCreate, db: Session = Depends(get_db), _=Depends(require_auth)):
+def add_fee_event(
+    case_id: int, payload: FeeEventCreate, db: Session = Depends(get_db), user=Depends(require_auth)
+):
     e = fee_service.add_fee_event(db, case_id=case_id, payload=payload)
+    from app.services.activity_log import log_activity
+    log_activity(db, action="fee_event_add", entity_type="fee_event", entity_id=e.id, user_id=user.id, details={"case_id": case_id})
     return _to_out(e)
 
 

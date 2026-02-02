@@ -36,6 +36,9 @@ def wipe_case_data(
 
     db.commit()
 
+    from app.services.activity_log import log_activity
+    log_activity(db, action="data_wipe", entity_type="admin", user_id=user.id, details={"cases": deleted_cases, "alerts": deleted_alerts, "notifications": deleted_notifications})
+
     return {
         "ok": True,
         "deleted": {

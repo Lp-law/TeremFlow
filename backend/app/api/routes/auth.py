@@ -44,7 +44,9 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
         max_age=settings.jwt_expires_minutes * 60,
         path="/",
     )
-    return UserOut(id=user.id, username=user.username, role=str(user.role))
+    from app.services.activity_log import log_activity
+    log_activity(db, action="login", entity_type="user", entity_id=user.id, user_id=user.id)
+    return UserOut(id=user.id, username=user.username, role=str(user.role), csrf_token=csrf)
 
 
 @router.post("/logout")
@@ -82,6 +84,8 @@ def logout(
                 status_code=status.HTTP_428_PRECONDITION_REQUIRED,
                 detail="הגיבוי ישן מדי. לפני התנתקות חובה לבצע גיבוי מחדש.",
             )
+        from app.services.activity_log import log_activity
+        log_activity(db, action="logout", entity_type="user", entity_id=user.id, user_id=user.id)
 
     response.delete_cookie(settings.jwt_cookie_name, path="/")
     response.delete_cookie("teremflow_csrf", path="/")
@@ -89,7 +93,18 @@ def logout(
 
 
 @router.get("/me", response_model=UserOut)
-def me(user=Depends(require_auth)):
-    return UserOut(id=user.id, username=user.username, role=str(user.role))
+def me(response: Response, user=Depends(require_auth)):
+    csrf = create_csrf_token()
+    samesite = "none" if settings.environment == "production" else "lax"
+    response.set_cookie(
+        "teremflow_csrf",
+        csrf,
+        httponly=False,
+        secure=settings.environment == "production",
+        samesite=samesite,
+        max_age=settings.jwt_expires_minutes * 60,
+        path="/",
+    )
+    return UserOut(id=user.id, username=user.username, role=str(user.role), csrf_token=csrf)
 
 

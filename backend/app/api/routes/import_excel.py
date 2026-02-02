@@ -14,10 +14,15 @@ router = APIRouter()
 
 
 @router.post("/excel")
-def import_excel(file: UploadFile = File(...), db: Session = Depends(get_db), _=Depends(require_auth)):
+def import_excel(
+    file: UploadFile = File(...), db: Session = Depends(get_db), user=Depends(require_auth)
+):
     try:
         data = file.file.read()
-        return import_cases_from_excel(db, data)
+        result = import_cases_from_excel(db, data)
+        from app.services.activity_log import log_activity
+        log_activity(db, action="excel_import", entity_type="import", user_id=user.id, details={"created": result["created"], "error_count": result["error_count"]})
+        return result
     except Exception as e:
         logger.exception("Import Excel failed: %s", e)
         raise

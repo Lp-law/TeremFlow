@@ -34,9 +34,13 @@ def list_expenses(case_id: int, db: Session = Depends(get_db), _=Depends(require
 
 
 @router.post("/", response_model=list[ExpenseOut])
-def add_expense(case_id: int, payload: ExpenseCreate, db: Session = Depends(get_db), _=Depends(require_auth)):
-    # returns 1 expense or 2 split parts
+def add_expense(
+    case_id: int, payload: ExpenseCreate, db: Session = Depends(get_db), user=Depends(require_auth)
+):
     created = expense_service.add_expense(db, case_id=case_id, payload=payload)
+    from app.services.activity_log import log_activity
+    for e in created:
+        log_activity(db, action="expense_add", entity_type="expense", entity_id=e.id, user_id=user.id, details={"case_id": case_id})
     return [_to_out(e) for e in created]
 
 

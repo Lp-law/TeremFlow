@@ -1,3 +1,4 @@
+from app.models.activity_log import ActivityLog  # noqa: F401
 from app.models.case import Case  # noqa: F401
 from app.models.expense import Expense  # noqa: F401
 from app.models.fee_event import FeeEvent  # noqa: F401

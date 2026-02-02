@@ -1,11 +1,12 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
-import { apiFetch } from '../lib/api'
+import { apiFetch, setCsrfToken } from '../lib/api'
 
 export type User = {
   id: number
   username: string
   role: string
+  csrf_token?: string
 }
 
 type AuthState = {
@@ -26,8 +27,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const me = await apiFetch<User>('/auth/me')
       setUser(me)
+      if (me.csrf_token) setCsrfToken(me.csrf_token)
     } catch {
       setUser(null)
+      setCsrfToken(null)
     } finally {
       setIsLoading(false)
     }
@@ -46,6 +49,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       body: JSON.stringify({ username, password }),
     })
     setUser(me)
+    if (me.csrf_token) setCsrfToken(me.csrf_token)
     navigate('/dashboard', { replace: true })
   }
 
@@ -55,6 +59,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       headers: opts?.backupId ? { 'X-Backup-Id': opts.backupId } : undefined,
     })
     setUser(null)
+    setCsrfToken(null)
     navigate('/login', { replace: true })
   }
 
