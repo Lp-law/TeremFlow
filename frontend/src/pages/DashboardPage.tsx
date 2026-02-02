@@ -118,9 +118,9 @@ export function DashboardPage() {
     <div className="min-h-screen w-full px-6 py-10">
       <div className="mx-auto w-full max-w-6xl">
         <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-3 order-first">
-            <img src="/logo-trm.png" alt="טר״מ" className="h-11 w-auto object-contain" />
-            <img src="/logo-law-firm.png" alt="משרד עורכי דין" className="h-9 w-auto object-contain opacity-90" />
+          <div className="flex items-center gap-3 order-first flex-wrap">
+            <img src="/logo-trm.png" alt="טר״מ" className="h-[88px] w-auto object-contain" />
+            <img src="/logo-law-firm.png" alt="משרד עורכי דין" className="h-[144px] w-auto object-contain opacity-90" />
           </div>
           <div className="text-right order-2 flex-1 min-w-0">
             <div className="text-2xl font-bold">דשבורד</div>
