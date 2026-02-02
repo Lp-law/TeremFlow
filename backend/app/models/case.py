@@ -34,6 +34,9 @@ class Case(Base):
     insurer_started: Mapped[bool] = mapped_column(Boolean, default=False)
     insurer_start_date: Mapped[dt.date] = mapped_column(Date, nullable=True)
 
+    # Historical retainer from import (Excel H). If set, counts against excess. Null for new cases.
+    retainer_snapshot_ils_gross: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     expenses = relationship("Expense", back_populates="case", cascade="all, delete-orphan")

@@ -45,6 +45,7 @@ def create_case(db: Session, payload) -> Case:
 
     anchor = getattr(payload, "retainer_anchor_date", None) or get_retainer_anchor_date(payload.open_date)
     branch = getattr(payload, "branch_name", None)
+    snapshot = getattr(payload, "retainer_snapshot_ils_gross", None)
 
     c = Case(
         case_reference=payload.case_reference,
@@ -60,6 +61,7 @@ def create_case(db: Session, payload) -> Case:
         deductible_ils_gross=deductible_ils,
         insurer_started=False,
         insurer_start_date=None,
+        retainer_snapshot_ils_gross=q_ils(Decimal(str(snapshot))) if snapshot is not None else None,
     )
     db.add(c)
     db.commit()
@@ -97,6 +99,7 @@ def to_case_out(db: Session, case: Case) -> dict:
         "deductible_ils_gross": case.deductible_ils_gross,
         "insurer_started": case.insurer_started,
         "insurer_start_date": case.insurer_start_date,
+        "retainer_snapshot_ils_gross": case.retainer_snapshot_ils_gross,
         "excess_remaining_ils_gross": excess,
     }
 

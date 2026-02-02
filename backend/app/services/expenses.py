@@ -30,16 +30,15 @@ def get_case_deductible_remaining(db: Session, case: Case) -> Decimal:
 
 def get_case_excess_remaining(db: Session, case: Case) -> Decimal:
     """
-    Excel P = M - J. excess_remaining = max(0, deductible - (retainer_paid + other_expenses)).
-    other_expenses = client-paid expenses where category != ATTORNEY_FEE.
+    Excel P = M - J.
+    excess_remaining = max(0, deductible - (other_expenses + retainer_snapshot + retainer_accrued_after_snapshot)).
+    - retainer_snapshot_ils_gross: historical retainer from import (Excel H), if any.
+    - retainer_accrued_after_snapshot: sum of RetainerAccrual (system-created).
+    - other_expenses: client-paid, category != ATTORNEY_FEE.
+    For new cases (no snapshot), retainer_accrued_after_snapshot uses RetainerPayment (cash) to preserve behavior.
     """
-    from app.models.retainer import RetainerPayment
+    from app.models.retainer import RetainerAccrual, RetainerPayment
 
-    retainer_paid = (
-        db.query(func.coalesce(func.sum(RetainerPayment.amount_ils_gross), 0))
-        .filter(RetainerPayment.case_id == case.id)
-        .scalar()
-    )
     other_expenses = (
         db.query(func.coalesce(func.sum(Expense.amount_ils_gross), 0))
         .filter(
@@ -49,7 +48,23 @@ def get_case_excess_remaining(db: Session, case: Case) -> Decimal:
         )
         .scalar()
     )
-    j = q_ils(Decimal(str(retainer_paid)) + Decimal(str(other_expenses)))
+    snapshot = Decimal(str(case.retainer_snapshot_ils_gross or 0))
+
+    # Use accruals when snapshot exists (imported case); otherwise payments (new case, preserve behavior)
+    if case.retainer_snapshot_ils_gross is not None:
+        retainer_after = (
+            db.query(func.coalesce(func.sum(RetainerAccrual.amount_ils_gross), 0))
+            .filter(RetainerAccrual.case_id == case.id)
+            .scalar()
+        )
+    else:
+        retainer_after = (
+            db.query(func.coalesce(func.sum(RetainerPayment.amount_ils_gross), 0))
+            .filter(RetainerPayment.case_id == case.id)
+            .scalar()
+        )
+
+    j = q_ils(Decimal(str(other_expenses)) + snapshot + Decimal(str(retainer_after)))
     m = Decimal(str(case.deductible_ils_gross))
     remaining = q_ils(m - j)
     return max(Decimal("0.00"), remaining)

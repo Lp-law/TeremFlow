@@ -98,6 +98,9 @@ export function CaseDetailsPage() {
                     {caseItem.branch_name ? (
                       <span>סניף: {caseItem.branch_name}</span>
                     ) : null}
+                    {caseItem.retainer_snapshot_ils_gross != null ? (
+                      <span>ריטיינר היסטורי (ייבוא): {formatILS(caseItem.retainer_snapshot_ils_gross)}</span>
+                    ) : null}
                   </div>
                 </div>
                 <button

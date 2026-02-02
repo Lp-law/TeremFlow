@@ -22,6 +22,7 @@ class CaseCreate(BaseModel):
     # Optional: for imports, Excel column B and C.
     branch_name: str | None = Field(default=None, max_length=120)
     retainer_anchor_date: dt.date | None = None  # If omitted, computed from open_date
+    retainer_snapshot_ils_gross: Decimal | None = Field(default=None, ge=0)  # Excel H: historical retainer
 
 
 class CaseOut(BaseModel):
@@ -42,6 +43,7 @@ class CaseOut(BaseModel):
     insurer_started: bool
     insurer_start_date: dt.date | None
 
+    retainer_snapshot_ils_gross: Decimal | None
     excess_remaining_ils_gross: Decimal  # Excel P = M - J
 
 
