@@ -38,6 +38,7 @@ export type CaseOut = {
   retainer_snapshot_ils_gross: string | number | null
   retainer_snapshot_through_month: string | null
   expenses_snapshot_ils_gross: string | number | null
+  historical_fee_stages: string[]
   excess_remaining_ils_gross: string | number
   insurer_started: boolean
   insurer_start_date: string | null

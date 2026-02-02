@@ -182,6 +182,7 @@ export function CaseDetailsPage() {
               {tab === 'fees' ? (
                 <FeesPanel
                   caseId={caseItem.id}
+                  historicalFeeStages={caseItem.historical_fee_stages ?? []}
                   onOpenAddFeeStage={() => setActiveModal('feeEvent')}
                   feesReloadKey={feesReloadKey}
                 />
@@ -752,22 +753,20 @@ function AddRetainerPaymentModal({ caseId, onClose, onSaved }: { caseId: number;
   )
 }
 
-type HistoricalFeeStage = { event_date: string; event_type: string; amount_ils_gross: string | number }
-
 function FeesPanel({
   caseId,
+  historicalFeeStages,
   onOpenAddFeeStage,
   feesReloadKey,
 }: {
   caseId: number
+  historicalFeeStages: string[]
   onOpenAddFeeStage: () => void
   feesReloadKey: number
 }) {
   const [items, setItems] = useState<FeeEvent[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-
-  const historicalFeeStages: HistoricalFeeStage[] = []
 
   async function load() {
     setError(null)
@@ -818,11 +817,11 @@ function FeesPanel({
                 </tr>
               </thead>
               <tbody>
-                {historicalFeeStages.map((h, i) => (
+                {historicalFeeStages.map((eventType, i) => (
                   <tr key={`hist-${i}`} className="border-b border-border/30 bg-muted/20">
-                    <td className="py-3">{h.event_date}</td>
-                    <td className="py-3">{FEE_EVENT_LABEL[h.event_type] ?? h.event_type}</td>
-                    <td className="py-3">{formatILS(h.amount_ils_gross)}</td>
+                    <td className="py-3">—</td>
+                    <td className="py-3">{FEE_EVENT_LABEL[eventType] ?? eventType}</td>
+                    <td className="py-3">—</td>
                     <td className="py-3">
                       <Badge label="עבר" variant="info" />
                     </td>

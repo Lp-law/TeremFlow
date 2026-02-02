@@ -10,7 +10,7 @@ from io import BytesIO
 from openpyxl import load_workbook
 from sqlalchemy.orm import Session
 
-from app.models.enums import CaseType
+from app.models.enums import CaseType, FeeEventType
 from app.services.cases import create_case
 
 
@@ -67,7 +67,12 @@ KNOWN_COLUMNS: dict[str, str] = {
     "expenses_snapshot_ils_gross": "expenses_snapshot_ils_gross",
     "הוצאות אחרות": "expenses_snapshot_ils_gross",
     "other expenses": "expenses_snapshot_ils_gross",
+    # Historical fee stages: comma-separated FeeEventType codes
+    "historical_fee_stages": "historical_fee_stages",
+    "שלבי שכ״ט עבר": "historical_fee_stages",
 }
+
+VALID_FEE_EVENT_TYPES = frozenset(e.value for e in FeeEventType)
 
 
 def _parse_date(v: Any) -> dt.date:
@@ -93,6 +98,22 @@ def _parse_decimal_ge_zero(v: Any, field_name: str) -> Decimal | None:
         return d
     except Exception as e:
         raise ValueError(f"Invalid {field_name}: {v}") from e
+
+
+def _parse_historical_fee_stages(v: Any) -> list[str] | None:
+    """Parse comma-separated FeeEventType codes. Empty/blank -> None. Invalid code -> raise."""
+    if v is None or (isinstance(v, str) and not v.strip()):
+        return None
+    s = str(v).strip()
+    if not s:
+        return None
+    parts = [p.strip() for p in s.split(",") if p.strip()]
+    if not parts:
+        return None
+    invalid = [p for p in parts if p not in VALID_FEE_EVENT_TYPES]
+    if invalid:
+        raise ValueError(f"historical_fee_stages: קוד לא מוכר: {invalid[0]}. קודים חוקיים: {', '.join(sorted(VALID_FEE_EVENT_TYPES))}")
+    return parts
 
 
 def _parse_case_type(v: Any) -> CaseType:
@@ -176,6 +197,7 @@ def import_cases_from_excel(db: Session, file_bytes: bytes) -> dict:
                     first_this_month = dt.date(today.year, today.month, 1)
                     last_day_prev = first_this_month - dt.timedelta(days=1)
                     payload.retainer_snapshot_through_month = dt.date(last_day_prev.year, last_day_prev.month, 1)
+            payload.historical_fee_stages = _parse_historical_fee_stages(data.get("historical_fee_stages"))
             create_case(db, payload)
             created += 1
         except HTTPException as e:

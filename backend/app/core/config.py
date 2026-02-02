@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     # Render Cron can hit /tasks/daily with this token.
     tasks_daily_secret: str = Field(default="dev-tasks-secret-change-me")
 
+    # Admin wipe: X-Wipe-Token must match to allow POST /admin/wipe-case-data.
+    wipe_case_data_secret: str = Field(default="dev-wipe-change-me")
+
     # Alerts
     deductible_near_pct: float = Field(default=0.10)
     deductible_near_abs_ils: int = Field(default=20000)

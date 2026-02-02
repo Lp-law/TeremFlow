@@ -50,6 +50,7 @@ class CaseOut(BaseModel):
     retainer_snapshot_ils_gross: Decimal | None
     retainer_snapshot_through_month: dt.date | None
     expenses_snapshot_ils_gross: Decimal | None
+    historical_fee_stages: list[str]  # FeeEventType codes, read-only
     excess_remaining_ils_gross: Decimal  # Excel P = M - J
 
 

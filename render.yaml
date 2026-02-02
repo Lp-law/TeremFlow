@@ -25,6 +25,8 @@ services:
         generateValue: true
       - key: TASKS_DAILY_SECRET
         sync: false
+      - key: WIPE_CASE_DATA_SECRET
+        sync: false
       - key: CORS_ORIGINS
         value: https://teremflow-frontend.onrender.com
 

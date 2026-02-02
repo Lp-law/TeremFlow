@@ -36,7 +36,7 @@ def create_app() -> FastAPI:
     def health():
         return {"status": "ok"}
 
-    _CSRF_EXEMPT_PATHS = frozenset({"/auth/login", "/auth/logout", "/import/excel"})
+    _CSRF_EXEMPT_PATHS = frozenset({"/auth/login", "/auth/logout", "/import/excel", "/admin/wipe-case-data"})
 
     @app.middleware("http")
     async def _csrf_middleware(request: Request, call_next):

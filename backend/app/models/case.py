@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime as dt
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, DateTime, Enum, Integer, Numeric, String, func
+from sqlalchemy import Boolean, Date, DateTime, Enum, Integer, JSON, Numeric, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -41,6 +41,8 @@ class Case(Base):
     retainer_snapshot_through_month: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
     # Historical non-attorney expenses from import (Excel I). If set (with H), snapshot mode.
     expenses_snapshot_ils_gross: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    # Historical fee stages from import (Excel historical_fee_stages). List of FeeEventType codes. Read-only.
+    historical_fee_stages: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
 
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
