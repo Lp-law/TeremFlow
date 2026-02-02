@@ -56,9 +56,21 @@ export function CaseDetailsPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const [isModalOpen, setIsModalOpen] = useState(false)
+  type ModalKind = 'expense' | 'retainerPayment' | 'feeEvent'
+  const [activeModal, setActiveModal] = useState<ModalKind | null>(null)
+  const [retainerReloadKey, setRetainerReloadKey] = useState(0)
+  const [feesReloadKey, setFeesReloadKey] = useState(0)
 
   const [feeEvents, setFeeEvents] = useState<FeeEvent[]>([])
+
+  useEffect(() => {
+    if (activeModal) {
+      document.body.style.overflow = 'hidden'
+      return () => {
+        document.body.style.overflow = ''
+      }
+    }
+  }, [activeModal])
 
   async function load() {
     setError(null)
@@ -122,7 +134,7 @@ export function CaseDetailsPage() {
                 </div>
                 {tab === 'expenses' ? (
                   <button
-                    onClick={() => setIsModalOpen(true)}
+                    onClick={() => setActiveModal('expense')}
                     className="btn btn-primary h-12 px-5 rounded-2xl"
                   >
                     הוספת הוצאה חדשה
@@ -163,20 +175,50 @@ export function CaseDetailsPage() {
                   caseId={caseItem.id}
                   retainerAnchorDate={caseItem.retainer_anchor_date}
                   retainerSnapshotIlsGross={caseItem.retainer_snapshot_ils_gross}
+                  onOpenAddPayment={() => setActiveModal('retainerPayment')}
+                  retainerReloadKey={retainerReloadKey}
                 />
               ) : null}
-              {tab === 'fees' ? <FeesPanel caseId={caseItem.id} /> : null}
+              {tab === 'fees' ? (
+                <FeesPanel
+                  caseId={caseItem.id}
+                  onOpenAddFeeStage={() => setActiveModal('feeEvent')}
+                  feesReloadKey={feesReloadKey}
+                />
+              ) : null}
             </div>
           </div>
         ) : null}
       </div>
 
-      {caseItem && isModalOpen ? (
+      {caseItem && activeModal === 'expense' ? (
         <AddExpenseModal
           caseId={caseItem.id}
-          onClose={() => setIsModalOpen(false)}
+          onClose={() => setActiveModal(null)}
           onSaved={async () => {
-            setIsModalOpen(false)
+            setActiveModal(null)
+            await load()
+          }}
+        />
+      ) : null}
+      {caseItem && activeModal === 'retainerPayment' ? (
+        <AddRetainerPaymentModal
+          caseId={caseItem.id}
+          onClose={() => setActiveModal(null)}
+          onSaved={async () => {
+            setActiveModal(null)
+            setRetainerReloadKey((k) => k + 1)
+            await load()
+          }}
+        />
+      ) : null}
+      {caseItem && activeModal === 'feeEvent' ? (
+        <AddFeeEventModal
+          caseId={caseItem.id}
+          onClose={() => setActiveModal(null)}
+          onSaved={async () => {
+            setActiveModal(null)
+            setFeesReloadKey((k) => k + 1)
             await load()
           }}
         />
@@ -448,17 +490,20 @@ function RetainerPanel({
   caseId,
   retainerAnchorDate,
   retainerSnapshotIlsGross,
+  onOpenAddPayment,
+  retainerReloadKey,
 }: {
   caseId: number
   retainerAnchorDate: string
   retainerSnapshotIlsGross: string | number | null
+  onOpenAddPayment: () => void
+  retainerReloadKey: number
 }) {
   const [summary, setSummary] = useState<RetainerSummary | null>(null)
   const [accruals, setAccruals] = useState<RetainerAccrual[]>([])
   const [payments, setPayments] = useState<RetainerPayment[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [isAddPaymentOpen, setIsAddPaymentOpen] = useState(false)
 
   const hasHistoricalSnapshot =
     retainerSnapshotIlsGross != null && Number(retainerSnapshotIlsGross) > 0
@@ -485,7 +530,7 @@ function RetainerPanel({
   useEffect(() => {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [caseId])
+  }, [caseId, retainerReloadKey])
 
   if (isLoading) return <div className="text-right text-sm text-muted">טוען ריטיינר...</div>
   if (error) return <div className="text-right text-sm text-red-300">{error}</div>
@@ -591,7 +636,7 @@ function RetainerPanel({
             <div className="text-sm text-muted mt-1">תשלומים מגדילים קרדיט (cash basis)</div>
           </div>
           <button
-            onClick={() => setIsAddPaymentOpen(true)}
+            onClick={onOpenAddPayment}
             className="btn btn-primary"
           >
             הוספת תשלום ריטיינר
@@ -624,17 +669,6 @@ function RetainerPanel({
           </table>
         </div>
       </div>
-
-      {isAddPaymentOpen ? (
-        <AddRetainerPaymentModal
-          caseId={caseId}
-          onClose={() => setIsAddPaymentOpen(false)}
-          onSaved={async () => {
-            setIsAddPaymentOpen(false)
-            await load()
-          }}
-        />
-      ) : null}
     </div>
   )
 }
@@ -714,11 +748,22 @@ function AddRetainerPaymentModal({ caseId, onClose, onSaved }: { caseId: number;
   )
 }
 
-function FeesPanel({ caseId }: { caseId: number }) {
+type HistoricalFeeStage = { event_date: string; event_type: string; amount_ils_gross: string | number }
+
+function FeesPanel({
+  caseId,
+  onOpenAddFeeStage,
+  feesReloadKey,
+}: {
+  caseId: number
+  onOpenAddFeeStage: () => void
+  feesReloadKey: number
+}) {
   const [items, setItems] = useState<FeeEvent[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [isAddOpen, setIsAddOpen] = useState(false)
+
+  const historicalFeeStages: HistoricalFeeStage[] = []
 
   async function load() {
     setError(null)
@@ -736,7 +781,7 @@ function FeesPanel({ caseId }: { caseId: number }) {
   useEffect(() => {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [caseId])
+  }, [caseId, feesReloadKey])
 
   const totals = useMemo(() => {
     const total = items.reduce((s, e) => s + toNumber(e.computed_amount_ils_gross), 0)
@@ -748,8 +793,47 @@ function FeesPanel({ caseId }: { caseId: number }) {
   if (isLoading) return <div className="text-right text-sm text-muted">טוען אירועי שכ״ט...</div>
   if (error) return <div className="text-right text-sm text-red-300">{error}</div>
 
+  const hasHistorical = historicalFeeStages.length > 0
+
   return (
     <div className="space-y-6">
+      {hasHistorical ? (
+        <div className="card-soft p-5">
+          <div className="text-right mb-4">
+            <div className="font-semibold">שלבי שכ״ט עבר (ייבוא)</div>
+            <div className="text-sm text-muted mt-1">תיעוד בלבד — אינו משפיע על קרדיט ריטיינר או תשלומים</div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-muted">
+                <tr className="border-b border-border/60">
+                  <th className="text-right py-3">תאריך</th>
+                  <th className="text-right py-3">שלב</th>
+                  <th className="text-right py-3">סכום</th>
+                  <th className="text-right py-3">מקור</th>
+                </tr>
+              </thead>
+              <tbody>
+                {historicalFeeStages.map((h, i) => (
+                  <tr key={`hist-${i}`} className="border-b border-border/30 bg-muted/20">
+                    <td className="py-3">{h.event_date}</td>
+                    <td className="py-3">{FEE_EVENT_LABEL[h.event_type] ?? h.event_type}</td>
+                    <td className="py-3">{formatILS(h.amount_ils_gross)}</td>
+                    <td className="py-3">
+                      <Badge label="עבר" variant="info" />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+
+      {hasHistorical ? (
+        <h3 className="text-sm font-semibold text-muted">שלבי שכ״ט עתידיים</h3>
+      ) : null}
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <MiniStat title="סה״כ שכ״ט" value={formatILS(totals.total)} />
         <MiniStat title="כוסה בקרדיט" value={formatILS(totals.covered)} />
@@ -763,10 +847,10 @@ function FeesPanel({ caseId }: { caseId: number }) {
             <div className="text-sm text-muted mt-1">המערכת מקצה קרדיט ריטיינר לפי סדר כרונולוגי</div>
           </div>
           <button
-            onClick={() => setIsAddOpen(true)}
+            onClick={onOpenAddFeeStage}
             className="btn btn-primary"
           >
-            הוספת אירוע שכ״ט
+            הוספת שלב שכ״ט
           </button>
         </div>
 
@@ -775,11 +859,11 @@ function FeesPanel({ caseId }: { caseId: number }) {
             <thead className="text-muted">
               <tr className="border-b border-border/60">
                 <th className="text-right py-3">תאריך</th>
-                <th className="text-right py-3">סוג</th>
-                <th className="text-right py-3">כמות</th>
-                <th className="text-right py-3">סה״כ</th>
+                <th className="text-right py-3">שלב</th>
+                <th className="text-right py-3">סכום</th>
                 <th className="text-right py-3">כוסה בקרדיט</th>
                 <th className="text-right py-3">לתשלום</th>
+                <th className="text-right py-3">מקור</th>
               </tr>
             </thead>
             <tbody>
@@ -787,10 +871,12 @@ function FeesPanel({ caseId }: { caseId: number }) {
                 <tr key={e.id} className="border-b border-border/30 hover:bg-surface/30">
                   <td className="py-3">{formatDateYMD(e.event_date)}</td>
                   <td className="py-3">{FEE_EVENT_LABEL[e.event_type] || e.event_type}</td>
-                  <td className="py-3">{e.quantity}</td>
                   <td className="py-3">{formatILS(e.computed_amount_ils_gross)}</td>
                   <td className="py-3">{formatILS(e.amount_covered_by_credit_ils_gross)}</td>
                   <td className="py-3">{formatILS(e.amount_due_cash_ils_gross)}</td>
+                  <td className="py-3">
+                    <Badge label="חדש" variant="success" />
+                  </td>
                 </tr>
               ))}
               {items.length === 0 ? (
@@ -804,17 +890,6 @@ function FeesPanel({ caseId }: { caseId: number }) {
           </table>
         </div>
       </div>
-
-      {isAddOpen ? (
-        <AddFeeEventModal
-          caseId={caseId}
-          onClose={() => setIsAddOpen(false)}
-          onSaved={async () => {
-            setIsAddOpen(false)
-            await load()
-          }}
-        />
-      ) : null}
     </div>
   )
 }
