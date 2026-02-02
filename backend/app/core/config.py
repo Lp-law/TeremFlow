@@ -27,7 +27,11 @@ class Settings(BaseSettings):
 
     # Render provides CORS_ORIGINS as a string (single URL or comma-separated). Support also JSON list.
     # NoDecode prevents pydantic-settings from attempting JSON parsing before validators run.
-    cors_origins: Annotated[list[str], NoDecode] = Field(default_factory=lambda: ["http://localhost:5173"], validation_alias="CORS_ORIGINS")
+    # Production fallback: if empty, use frontend URL so CORS never blocks.
+    cors_origins: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: ["http://localhost:5173"],
+        validation_alias="CORS_ORIGINS",
+    )
 
     jwt_secret: str = Field(default="dev-secret-change-me")
     jwt_algorithm: str = Field(default="HS256")
@@ -56,10 +60,7 @@ class Settings(BaseSettings):
     @classmethod
     def _parse_cors_origins(cls, v):  # noqa: ANN001
         """
-        Accept:
-        - single origin string: "https://a.onrender.com"
-        - comma-separated: "https://a.onrender.com, https://b.onrender.com"
-        - JSON list: '["https://a.onrender.com", "https://b.onrender.com"]'
+        Accept: string, comma-separated, or JSON list.
         """
         if v is None:
             return v
@@ -74,11 +75,24 @@ class Settings(BaseSettings):
                     parsed = None
                 if isinstance(parsed, list):
                     return [str(x).strip() for x in parsed if str(x).strip()]
-            # fallback: comma-separated
             return [p.strip() for p in s.split(",") if p.strip()]
         if isinstance(v, (list, tuple, set)):
             return [str(x).strip() for x in v if str(x).strip()]
         return v
+
+    @field_validator("cors_origins", mode="after")
+    @classmethod
+    def _ensure_cors_origins(cls, v: list[str] | None, info) -> list[str]:  # noqa: ANN001
+        """Production fallback: empty CORS blocks all; use frontend URL."""
+        if v is None:
+            v = []
+        result = [x for x in v if x] if isinstance(v, list) else []
+        if not result and info.data.get("environment") == "production":
+            result = ["https://teremflow-frontend.onrender.com"]
+        if not result:
+            result = ["http://localhost:5173"]
+        return result
+
 
 
 settings = Settings()

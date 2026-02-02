@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import HTTPException, Request
@@ -10,13 +12,20 @@ from app.core.security import constant_time_equals
 from app.db.init_db import ensure_seeded
 from app.db.session import Base, engine
 
+logger = logging.getLogger(__name__)
+
 
 def create_app() -> FastAPI:
     app = FastAPI(title=settings.app_name)
 
+    origins = settings.cors_origins or ["https://teremflow-frontend.onrender.com"]
+    if not origins:
+        origins = ["https://teremflow-frontend.onrender.com"]
+    logger.info("CORS allow_origins=%s", origins)
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.cors_origins,
+        allow_origins=origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -32,17 +41,21 @@ def create_app() -> FastAPI:
         """
         Production CSRF protection for cookie-auth endpoints.
         - Only enforced in production.
-        - Only for unsafe methods.
-        - Only when the auth cookie is present (so cron/unauthenticated calls aren't impacted).
+        - Only for unsafe methods (OPTIONS is preflight, skip).
+        - Skip for /import/excel (multipart; frontend may not send X-CSRF-Token).
+        - Only when the auth cookie is present.
         """
         if settings.environment == "production":
             if request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"}:
-                has_session = bool(request.cookies.get(settings.jwt_cookie_name))
-                if has_session:
-                    csrf_cookie = request.cookies.get("teremflow_csrf")
-                    csrf_header = request.headers.get("X-CSRF-Token")
-                    if not constant_time_equals(csrf_cookie, csrf_header):
-                        raise HTTPException(status_code=403, detail="CSRF token missing/invalid")
+                if request.url.path.endswith("/import/excel"):
+                    pass  # multipart file upload; skip CSRF for compatibility
+                else:
+                    has_session = bool(request.cookies.get(settings.jwt_cookie_name))
+                    if has_session:
+                        csrf_cookie = request.cookies.get("teremflow_csrf")
+                        csrf_header = request.headers.get("X-CSRF-Token")
+                        if not constant_time_equals(csrf_cookie, csrf_header):
+                            raise HTTPException(status_code=403, detail="CSRF token missing/invalid")
         return await call_next(request)
 
     @app.on_event("startup")
