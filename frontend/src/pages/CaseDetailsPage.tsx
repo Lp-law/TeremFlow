@@ -25,6 +25,27 @@ const CATEGORY_LABEL: Record<ExpenseCategory, string> = {
   OTHER: 'אחר',
 }
 
+const CASE_TYPE_LABEL: Record<string, string> = {
+  COURT: 'תיק ביהמ"ש',
+  DEMAND_LETTER: 'מכתב דרישה',
+  SMALL_CLAIMS: 'תביעות קטנות',
+}
+
+const FEE_EVENT_LABEL: Record<string, string> = {
+  COURT_STAGE_1_DEFENSE: 'שלב 1 — כתב הגנה',
+  COURT_STAGE_2_DAMAGES: 'שלב 2 — חישובי נזק',
+  COURT_STAGE_3_EVIDENCE: 'שלב 3 — הגשת ראיות',
+  COURT_STAGE_4_PROOFS: 'שלב 4 — הוכחות',
+  COURT_STAGE_5_SUMMARIES: 'שלב 5 — סיכומים',
+  AMENDED_DEFENSE_PARTIAL: 'כתב הגנה מתוקן (חלקי)',
+  AMENDED_DEFENSE_FULL: 'כתב הגנה מתוקן (מלא)',
+  THIRD_PARTY_NOTICE: 'הודעת צד ג׳',
+  ADDITIONAL_PROOF_HEARING: 'ישיבת הוכחות נוספת',
+  DEMAND_FIX: 'מכתב דרישה — קבוע',
+  DEMAND_HOURLY: 'מכתב דרישה — שעתי',
+  SMALL_CLAIMS_MANUAL: 'תביעות קטנות — ידני',
+}
+
 export function CaseDetailsPage() {
   const { caseId } = useParams()
   const id = Number(caseId)
@@ -37,14 +58,20 @@ export function CaseDetailsPage() {
 
   const [isModalOpen, setIsModalOpen] = useState(false)
 
+  const [feeEvents, setFeeEvents] = useState<FeeEvent[]>([])
+
   async function load() {
     setError(null)
     setIsLoading(true)
     try {
-      const c = await apiFetch<CaseOut>(`/cases/${id}`)
-      const exps = await apiFetch<ExpenseOut[]>(`/cases/${id}/expenses/`)
+      const [c, exps, fees] = await Promise.all([
+        apiFetch<CaseOut>(`/cases/${id}`),
+        apiFetch<ExpenseOut[]>(`/cases/${id}/expenses/`),
+        apiFetch<FeeEvent[]>(`/cases/${id}/fees/`),
+      ])
       setCaseItem(c)
       setExpenses(exps)
+      setFeeEvents(fees)
     } catch (e: any) {
       setError(e?.message || 'שגיאה')
     } finally {
@@ -57,9 +84,13 @@ export function CaseDetailsPage() {
     load()
   }, [id])
 
-  const totalExpenses = useMemo(() => {
-    return expenses.reduce((sum, e) => sum + Number(e.amount_ils_gross), 0)
-  }, [expenses])
+  const currentLegalStage = useMemo(() => {
+    if (feeEvents.length === 0) return null
+    const latest = [...feeEvents].sort(
+      (a, b) => new Date(b.event_date).getTime() - new Date(a.event_date).getTime()
+    )[0]
+    return FEE_EVENT_LABEL[latest.event_type] ?? latest.event_type
+  }, [feeEvents])
 
   return (
     <div className="min-h-screen w-full px-6 py-10">
@@ -88,27 +119,15 @@ export function CaseDetailsPage() {
               <div className="flex flex-col md:flex-row gap-4 md:items-center md:justify-between">
                 <div className="text-right">
                   <div className="text-lg font-semibold">{caseItem.case_reference}</div>
-                  <div className="text-sm text-muted mt-1">
-                    יתרת השתתפות עצמית: {formatILS(caseItem.excess_remaining_ils_gross)} מתוך {formatILS(caseItem.deductible_ils_gross)}
-                  </div>
-                  <div className="text-xs text-muted mt-0.5 flex gap-3 justify-end flex-wrap">
-                    {caseItem.retainer_anchor_date ? (
-                      <span>תאריך עוגן ריטיינר: {caseItem.retainer_anchor_date}</span>
-                    ) : null}
-                    {caseItem.branch_name ? (
-                      <span>סניף: {caseItem.branch_name}</span>
-                    ) : null}
-                    {caseItem.retainer_snapshot_ils_gross != null ? (
-                      <span>ריטיינר היסטורי (ייבוא): {formatILS(caseItem.retainer_snapshot_ils_gross)}</span>
-                    ) : null}
-                  </div>
                 </div>
-                <button
-                  onClick={() => setIsModalOpen(true)}
-                  className="btn btn-primary h-12 px-5 rounded-2xl"
-                >
-                  הוספת הוצאה
-                </button>
+                {tab !== 'overview' ? (
+                  <button
+                    onClick={() => setIsModalOpen(true)}
+                    className="btn btn-primary h-12 px-5 rounded-2xl"
+                  >
+                    הוספת הוצאה
+                  </button>
+                ) : null}
               </div>
 
               <div className="mt-6 flex gap-2 flex-wrap">
@@ -129,10 +148,10 @@ export function CaseDetailsPage() {
 
             <div className="mt-4 card p-6">
               {tab === 'overview' ? (
-                <div className="text-right space-y-2">
-                  <div className="text-sm text-muted">סה״כ הוצאות בטווח הנתונים: {formatILS(totalExpenses)}</div>
-                  <div className="text-sm text-muted">מצב משלם: {caseItem.insurer_started ? 'המבטח משלם' : 'טר״מ/השתתפות עצמית'}</div>
-                </div>
+                <OverviewTab
+                  caseItem={caseItem}
+                  currentLegalStage={currentLegalStage}
+                />
               ) : null}
 
               {tab === 'expenses' ? (
@@ -186,6 +205,51 @@ export function CaseDetailsPage() {
           }}
         />
       ) : null}
+    </div>
+  )
+}
+
+function OverviewTab({ caseItem, currentLegalStage }: { caseItem: CaseOut; currentLegalStage: string | null }) {
+  return (
+    <div className="text-right space-y-8">
+      <section>
+        <h3 className="text-sm font-semibold text-muted mb-3">זיהוי תיק</h3>
+        <dl className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
+          <ReadOnlyRow label="מזהה תיק" value={caseItem.case_reference} />
+          <ReadOnlyRow label="שם התיק" value={caseItem.case_reference} />
+          <ReadOnlyRow label="סניף" value={caseItem.branch_name ?? '—'} />
+          <ReadOnlyRow label="סוג תיק" value={CASE_TYPE_LABEL[caseItem.case_type] ?? caseItem.case_type} />
+          <ReadOnlyRow label="סטטוס" value={caseItem.status === 'OPEN' ? 'פתוח' : 'סגור'} />
+          <ReadOnlyRow label="תאריך פתיחה" value={caseItem.open_date} />
+        </dl>
+      </section>
+
+      <section>
+        <h3 className="text-sm font-semibold text-muted mb-3">תמונת מצב כספית (לקריאה בלבד)</h3>
+        <dl className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
+          <ReadOnlyRow label="השתתפות עצמית (ברוטו)" value={formatILS(caseItem.deductible_ils_gross)} />
+          <ReadOnlyRow label="שכ״ט ששולם עד כה" value={caseItem.retainer_snapshot_ils_gross != null ? formatILS(caseItem.retainer_snapshot_ils_gross) : '—'} />
+          <ReadOnlyRow label="הוצאות ששולמו עד כה" value={caseItem.expenses_snapshot_ils_gross != null ? formatILS(caseItem.expenses_snapshot_ils_gross) : '—'} />
+          <ReadOnlyRow label="יתרת השתתפות עצמית" value={formatILS(caseItem.excess_remaining_ils_gross)} />
+        </dl>
+      </section>
+
+      <section>
+        <h3 className="text-sm font-semibold text-muted mb-3">מידע משפטי / תהליכי</h3>
+        <dl className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
+          <ReadOnlyRow label="שלב ההליך הנוכחי" value={currentLegalStage ?? 'לא הוגדר'} />
+          <ReadOnlyRow label="תאריך עוגן ריטיינר" value={caseItem.retainer_anchor_date} />
+        </dl>
+      </section>
+    </div>
+  )
+}
+
+function ReadOnlyRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-xs text-muted">{label}</dt>
+      <dd className="mt-0.5 font-medium">{value}</dd>
     </div>
   )
 }
@@ -574,21 +638,6 @@ function AddRetainerPaymentModal({ caseId, onClose, onSaved }: { caseId: number;
       </div>
     </div>
   )
-}
-
-const FEE_EVENT_LABEL: Record<FeeEventType, string> = {
-  COURT_STAGE_1_DEFENSE: 'שלב 1 — כתב הגנה',
-  COURT_STAGE_2_DAMAGES: 'שלב 2 — חישובי נזק',
-  COURT_STAGE_3_EVIDENCE: 'שלב 3 — הגשת ראיות',
-  COURT_STAGE_4_PROOFS: 'שלב 4 — הוכחות',
-  COURT_STAGE_5_SUMMARIES: 'שלב 5 — סיכומים',
-  AMENDED_DEFENSE_PARTIAL: 'כתב הגנה מתוקן (חלקי)',
-  AMENDED_DEFENSE_FULL: 'כתב הגנה מתוקן (מלא)',
-  THIRD_PARTY_NOTICE: 'הודעת צד ג׳',
-  ADDITIONAL_PROOF_HEARING: 'ישיבת הוכחות נוספת',
-  DEMAND_FIX: 'מכתב דרישה — קבוע',
-  DEMAND_HOURLY: 'מכתב דרישה — שעתי',
-  SMALL_CLAIMS_MANUAL: 'תביעות קטנות — ידני',
 }
 
 function FeesPanel({ caseId }: { caseId: number }) {
