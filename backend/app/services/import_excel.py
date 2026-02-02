@@ -49,6 +49,18 @@ KNOWN_COLUMNS: dict[str, str] = {
     "retainer_anchor": "retainer_anchor_date",
     "retainer_anchor_date": "retainer_anchor_date",
     "תאריך עוגן": "retainer_anchor_date",
+    # Excel H: total retainer paid to date (snapshot)
+    "h": "retainer_snapshot_ils_gross",
+    "retainer_snapshot": "retainer_snapshot_ils_gross",
+    "retainer_snapshot_ils_gross": "retainer_snapshot_ils_gross",
+    "ריטיינר שולם": "retainer_snapshot_ils_gross",
+    "total retainer": "retainer_snapshot_ils_gross",
+    # Excel I: total non-attorney expenses (snapshot)
+    "i": "expenses_snapshot_ils_gross",
+    "expenses_snapshot": "expenses_snapshot_ils_gross",
+    "expenses_snapshot_ils_gross": "expenses_snapshot_ils_gross",
+    "הוצאות אחרות": "expenses_snapshot_ils_gross",
+    "other expenses": "expenses_snapshot_ils_gross",
 }
 
 
@@ -62,6 +74,19 @@ def _parse_date(v: Any) -> dt.date:
         return dt.date.fromisoformat(str(v))
     except Exception:
         raise ValueError(f"Invalid date: {v}")
+
+
+def _parse_decimal_ge_zero(v: Any, field_name: str) -> Decimal | None:
+    """Parse decimal >= 0. Returns None for empty/None."""
+    if v is None or v == "":
+        return None
+    try:
+        d = Decimal(str(v))
+        if d < 0:
+            raise ValueError(f"{field_name} must be >= 0")
+        return d
+    except Exception as e:
+        raise ValueError(f"Invalid {field_name}: {v}") from e
 
 
 def _parse_case_type(v: Any) -> CaseType:
@@ -132,6 +157,9 @@ def import_cases_from_excel(db: Session, file_bytes: bytes) -> dict:
             )
             payload.branch_name = (str(data.get("branch_name") or "").strip() or None)
             payload.retainer_anchor_date = _parse_date(data["retainer_anchor_date"]) if data.get("retainer_anchor_date") not in (None, "") else None
+            # Excel H, I: snapshots (>= 0)
+            payload.retainer_snapshot_ils_gross = _parse_decimal_ge_zero(data.get("retainer_snapshot_ils_gross"), "retainer_snapshot_ils_gross")
+            payload.expenses_snapshot_ils_gross = _parse_decimal_ge_zero(data.get("expenses_snapshot_ils_gross"), "expenses_snapshot_ils_gross")
             create_case(db, payload)
             created += 1
         except HTTPException as e:

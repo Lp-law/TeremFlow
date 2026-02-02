@@ -36,6 +36,8 @@ class Case(Base):
 
     # Historical retainer from import (Excel H). If set, counts against excess. Null for new cases.
     retainer_snapshot_ils_gross: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    # Historical non-attorney expenses from import (Excel I). If set (with H), snapshot mode.
+    expenses_snapshot_ils_gross: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
 
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

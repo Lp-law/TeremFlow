@@ -122,7 +122,7 @@ def test_excess_remaining_never_negative(db: Session):
 
 
 def test_excess_with_snapshot(db: Session):
-    """Case with snapshot: deductible=20000, snapshot=5000, other_expenses=3000 -> excess=12000."""
+    """Case with snapshot: J = H + I. deductible=20000, H=5000, I=3000 -> excess=12000."""
     c = Case(
         case_reference="test-excess-snapshot",
         case_type=CaseType.COURT,
@@ -133,26 +133,13 @@ def test_excess_with_snapshot(db: Session):
         deductible_ils_gross=Decimal("20000.00"),
         insurer_started=False,
         retainer_snapshot_ils_gross=Decimal("5000.00"),
+        expenses_snapshot_ils_gross=Decimal("3000.00"),
     )
     db.add(c)
     db.commit()
     db.refresh(c)
 
-    db.add(
-        Expense(
-            case_id=c.id,
-            supplier_name="Expert",
-            amount_ils_gross=Decimal("3000.00"),
-            service_description="Report",
-            demand_received_date=dt.date(2025, 8, 1),
-            expense_date=dt.date(2025, 8, 1),
-            category=ExpenseCategory.EXPERT,
-            payer=ExpensePayer.CLIENT_DEDUCTIBLE,
-        )
-    )
-    db.commit()
-
-    # J = 3000 (other) + 5000 (snapshot) + 0 (no accruals) = 8000; P = 20000 - 8000 = 12000
+    # J = 5000 (H) + 3000 (I) = 8000; P = 20000 - 8000 = 12000. Expense rows ignored in snapshot mode.
     assert get_case_excess_remaining(db, c) == Decimal("12000.00")
 
 

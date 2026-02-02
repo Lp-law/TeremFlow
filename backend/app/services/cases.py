@@ -46,6 +46,7 @@ def create_case(db: Session, payload) -> Case:
     anchor = getattr(payload, "retainer_anchor_date", None) or get_retainer_anchor_date(payload.open_date)
     branch = getattr(payload, "branch_name", None)
     snapshot = getattr(payload, "retainer_snapshot_ils_gross", None)
+    expenses_snapshot = getattr(payload, "expenses_snapshot_ils_gross", None)
 
     c = Case(
         case_reference=payload.case_reference,
@@ -62,13 +63,15 @@ def create_case(db: Session, payload) -> Case:
         insurer_started=False,
         insurer_start_date=None,
         retainer_snapshot_ils_gross=q_ils(Decimal(str(snapshot))) if snapshot is not None else None,
+        expenses_snapshot_ils_gross=q_ils(Decimal(str(expenses_snapshot))) if expenses_snapshot is not None else None,
     )
     db.add(c)
     db.commit()
     db.refresh(c)
 
-    # Retainer accruals: generate up to current month using anchor.
-    ensure_accruals_up_to(db, case_id=c.id, retainer_anchor_date=c.retainer_anchor_date)
+    # Retainer accruals: do NOT generate when snapshot exists (imported historical case).
+    if c.retainer_snapshot_ils_gross is None:
+        ensure_accruals_up_to(db, case_id=c.id, retainer_anchor_date=c.retainer_anchor_date)
     return c
 
 
@@ -100,6 +103,7 @@ def to_case_out(db: Session, case: Case) -> dict:
         "insurer_started": case.insurer_started,
         "insurer_start_date": case.insurer_start_date,
         "retainer_snapshot_ils_gross": case.retainer_snapshot_ils_gross,
+        "expenses_snapshot_ils_gross": case.expenses_snapshot_ils_gross,
         "excess_remaining_ils_gross": excess,
     }
 
