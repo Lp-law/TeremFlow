@@ -89,7 +89,15 @@ export function CaseDetailsPage() {
                 <div className="text-right">
                   <div className="text-lg font-semibold">{caseItem.case_reference}</div>
                   <div className="text-sm text-muted mt-1">
-                    יתרת השתתפות עצמית: {formatILS(caseItem.deductible_remaining_ils_gross)} מתוך {formatILS(caseItem.deductible_ils_gross)}
+                    יתרת השתתפות עצמית: {formatILS(caseItem.excess_remaining_ils_gross)} מתוך {formatILS(caseItem.deductible_ils_gross)}
+                  </div>
+                  <div className="text-xs text-muted mt-0.5 flex gap-3 justify-end flex-wrap">
+                    {caseItem.retainer_anchor_date ? (
+                      <span>תאריך עוגן ריטיינר: {caseItem.retainer_anchor_date}</span>
+                    ) : null}
+                    {caseItem.branch_name ? (
+                      <span>סניף: {caseItem.branch_name}</span>
+                    ) : null}
                   </div>
                 </div>
                 <button
@@ -158,7 +166,7 @@ export function CaseDetailsPage() {
                 </div>
               ) : null}
 
-              {tab === 'retainer' ? <RetainerPanel caseId={caseItem.id} caseOpenDate={caseItem.open_date} /> : null}
+              {tab === 'retainer' ? <RetainerPanel caseId={caseItem.id} retainerAnchorDate={caseItem.retainer_anchor_date} /> : null}
               {tab === 'fees' ? <FeesPanel caseId={caseItem.id} /> : null}
             </div>
           </div>
@@ -341,7 +349,7 @@ function Field({
   )
 }
 
-function RetainerPanel({ caseId, caseOpenDate }: { caseId: number; caseOpenDate: string }) {
+function RetainerPanel({ caseId, retainerAnchorDate }: { caseId: number; retainerAnchorDate: string }) {
   const [summary, setSummary] = useState<RetainerSummary | null>(null)
   const [accruals, setAccruals] = useState<RetainerAccrual[]>([])
   const [payments, setPayments] = useState<RetainerPayment[]>([])
@@ -376,21 +384,7 @@ function RetainerPanel({ caseId, caseOpenDate }: { caseId: number; caseOpenDate:
   if (isLoading) return <div className="text-right text-sm text-muted">טוען ריטיינר...</div>
   if (error) return <div className="text-right text-sm text-red-300">{error}</div>
 
-  const retainerStartMonth = (() => {
-    // Mirrors backend rule:
-    // - If opened Jan–Jun => start month is next month
-    // - If opened Jul–Dec => start month is Jan next year
-    const d = new Date(String(caseOpenDate).slice(0, 10))
-    if (!Number.isFinite(d.getTime())) return null
-    const y = d.getUTCFullYear()
-    const m = d.getUTCMonth() + 1
-    if (m >= 1 && m <= 6) {
-      const nm = m === 12 ? 1 : m + 1
-      const ny = m === 12 ? y + 1 : y
-      return `${ny}-${String(nm).padStart(2, '0')}`
-    }
-    return `${y + 1}-01`
-  })()
+  const retainerStartMonth = retainerAnchorDate ? String(retainerAnchorDate).slice(0, 7) : null
 
   return (
     <div className="space-y-6">

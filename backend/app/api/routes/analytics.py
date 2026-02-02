@@ -21,7 +21,7 @@ from app.schemas.analytics import (
     TimeSeriesPoint,
 )
 from app.services.deductible import q_ils
-from app.services.expenses import get_case_deductible_remaining
+from app.services.expenses import get_case_excess_remaining
 
 router = APIRouter()
 
@@ -108,7 +108,7 @@ def overview(
                 total_expenses_ils_gross=total_case,
                 attorney_fees_expenses_ils_gross=attorney_case,
                 other_expenses_ils_gross=other_case,
-                deductible_remaining_ils_gross=get_case_deductible_remaining(db, c),
+                deductible_remaining_ils_gross=get_case_excess_remaining(db, c),
             )
         )
 
@@ -121,7 +121,7 @@ def overview(
 
     aggregate_remaining = q_ils(
         sum(
-            (get_case_deductible_remaining(db, c) for c in cases if c.status == CaseStatus.OPEN),
+            (get_case_excess_remaining(db, c) for c in cases if c.status == CaseStatus.OPEN),
             Decimal("0.00"),
         )
     )

@@ -20,6 +20,8 @@ class Case(Base):
     status: Mapped[CaseStatus] = mapped_column(Enum(CaseStatus), default=CaseStatus.OPEN, index=True)
 
     open_date: Mapped[dt.date] = mapped_column(Date, index=True)
+    retainer_anchor_date: Mapped[dt.date] = mapped_column(Date, index=True)  # July same year or Jan next year
+    branch_name: Mapped[str | None] = mapped_column(String(120), nullable=True)  # Excel column B
 
     # Deductible/excess (gross in ILS; stored as computed at open)
     deductible_usd: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=True)

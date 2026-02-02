@@ -19,6 +19,10 @@ class CaseCreate(BaseModel):
     # For imports: allow direct ILS deductible (fx marked imported if no usd).
     deductible_ils_gross: Decimal | None = Field(default=None, gt=0)
 
+    # Optional: for imports, Excel column B and C.
+    branch_name: str | None = Field(default=None, max_length=120)
+    retainer_anchor_date: dt.date | None = None  # If omitted, computed from open_date
+
 
 class CaseOut(BaseModel):
     id: int
@@ -26,6 +30,8 @@ class CaseOut(BaseModel):
     case_type: CaseType
     status: CaseStatus
     open_date: dt.date
+    retainer_anchor_date: dt.date
+    branch_name: str | None
 
     deductible_usd: Decimal | None
     fx_rate_usd_ils: Decimal | None
@@ -36,7 +42,7 @@ class CaseOut(BaseModel):
     insurer_started: bool
     insurer_start_date: dt.date | None
 
-    deductible_remaining_ils_gross: Decimal
+    excess_remaining_ils_gross: Decimal  # Excel P = M - J
 
 
 class CaseUpdateStatus(BaseModel):

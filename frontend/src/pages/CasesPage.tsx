@@ -79,7 +79,7 @@ export function CasesPage() {
         deductible_ils_gross: c.deductible_ils_gross,
         insurer_started: c.insurer_started,
         insurer_start_date: c.insurer_start_date ?? '',
-        deductible_remaining_ils_gross: c.deductible_remaining_ils_gross,
+        excess_remaining_ils_gross: c.excess_remaining_ils_gross,
       }))
 
       const columns = [
@@ -95,7 +95,7 @@ export function CasesPage() {
         'deductible_ils_gross',
         'insurer_started',
         'insurer_start_date',
-        'deductible_remaining_ils_gross',
+        'excess_remaining_ils_gross',
       ]
 
       const csv = toCsv(rows, columns, ',')
@@ -217,7 +217,7 @@ export function CasesPage() {
                       </td>
                       <td className="py-3">{CASE_TYPE_LABEL[c.case_type] || c.case_type}</td>
                       <td className="py-3">{c.status === 'OPEN' ? 'פתוח' : 'סגור'}</td>
-                      <td className="py-3">{formatILS(c.deductible_remaining_ils_gross)}</td>
+                      <td className="py-3">{formatILS(c.excess_remaining_ils_gross)}</td>
                       <td className="py-3">{c.insurer_started ? 'המבטח משלם' : 'טר״מ/השתתפות עצמית'}</td>
                     </tr>
                   ))}

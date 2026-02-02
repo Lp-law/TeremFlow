@@ -9,7 +9,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.case import Case
-from app.models.enums import ExpensePayer
+from app.models.enums import ExpenseCategory, ExpensePayer
 from app.models.expense import Expense
 from app.services.deductible import deductible_remaining, q_ils, split_amount_over_deductible
 
@@ -26,6 +26,33 @@ def _consumed_on_deductible(db: Session, case_id: int) -> Decimal:
 def get_case_deductible_remaining(db: Session, case: Case) -> Decimal:
     consumed = _consumed_on_deductible(db, case.id)
     return deductible_remaining(deductible_ils_gross=Decimal(str(case.deductible_ils_gross)), consumed_on_deductible_ils_gross=consumed)
+
+
+def get_case_excess_remaining(db: Session, case: Case) -> Decimal:
+    """
+    Excel P = M - J. excess_remaining = max(0, deductible - (retainer_paid + other_expenses)).
+    other_expenses = client-paid expenses where category != ATTORNEY_FEE.
+    """
+    from app.models.retainer import RetainerPayment
+
+    retainer_paid = (
+        db.query(func.coalesce(func.sum(RetainerPayment.amount_ils_gross), 0))
+        .filter(RetainerPayment.case_id == case.id)
+        .scalar()
+    )
+    other_expenses = (
+        db.query(func.coalesce(func.sum(Expense.amount_ils_gross), 0))
+        .filter(
+            Expense.case_id == case.id,
+            Expense.payer == ExpensePayer.CLIENT_DEDUCTIBLE,
+            Expense.category != ExpenseCategory.ATTORNEY_FEE,
+        )
+        .scalar()
+    )
+    j = q_ils(Decimal(str(retainer_paid)) + Decimal(str(other_expenses)))
+    m = Decimal(str(case.deductible_ils_gross))
+    remaining = q_ils(m - j)
+    return max(Decimal("0.00"), remaining)
 
 
 def list_expenses(db: Session, case_id: int) -> list[Expense]:

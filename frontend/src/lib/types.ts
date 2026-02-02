@@ -31,8 +31,10 @@ export type CaseOut = {
   case_type: CaseType
   status: CaseStatus
   open_date: string
+  retainer_anchor_date: string
+  branch_name: string | null
   deductible_ils_gross: string | number
-  deductible_remaining_ils_gross: string | number
+  excess_remaining_ils_gross: string | number
   insurer_started: boolean
   insurer_start_date: string | null
 }

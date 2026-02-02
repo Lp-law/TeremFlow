@@ -7,12 +7,12 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.case import Case
-from app.models.enums import CaseStatus, ExpensePayer, NotificationType
-from app.models.expense import Expense
+from app.models.enums import CaseStatus, NotificationType
 from app.models.notification import AlertEvent, Notification
 from app.models.retainer import RetainerAccrual
 from app.services.deductible import q_ils
 from app.services.email import send_email
+from app.services.expenses import get_case_excess_remaining
 
 
 def _has_alert(db: Session, *, type_: NotificationType, key: str) -> bool:
@@ -27,21 +27,6 @@ def _mark_alert(db: Session, *, type_: NotificationType, key: str, case_id: int 
 def _create_notification(db: Session, *, type_: NotificationType, title: str, message: str, severity: str, case_id: int | None) -> None:
     db.add(Notification(type=type_, title=title, message=message, severity=severity, case_id=case_id))
     db.commit()
-
-
-def _deductible_consumed(db: Session, case_id: int) -> Decimal:
-    from sqlalchemy import func
-
-    total = (
-        db.query(func.coalesce(func.sum(Expense.amount_ils_gross), 0))
-        .filter(Expense.case_id == case_id, Expense.payer == ExpensePayer.CLIENT_DEDUCTIBLE)
-        .scalar()
-    )
-    return q_ils(Decimal(str(total)))
-
-
-def _deductible_remaining(db: Session, case: Case) -> Decimal:
-    return q_ils(Decimal(str(case.deductible_ils_gross)) - _deductible_consumed(db, case.id))
 
 
 def run_daily_alerts(db: Session) -> dict:
@@ -67,10 +52,10 @@ def run_daily_alerts(db: Session) -> dict:
         _mark_alert(db, type_=NotificationType.INSURER_STARTED_PAYING, key=key, case_id=c.id)
         sent += 1
 
-    # Deductible near exhaustion (once per case)
+    # Excess near exhaustion (once per case) — Excel P = M - J
     open_cases = db.query(Case).filter(Case.status == CaseStatus.OPEN).all()
     for c in open_cases:
-        remaining = _deductible_remaining(db, c)
+        remaining = get_case_excess_remaining(db, c)
         pct_threshold = q_ils(Decimal(str(c.deductible_ils_gross)) * Decimal(str(settings.deductible_near_pct)))
         abs_threshold = q_ils(Decimal(str(settings.deductible_near_abs_ils)))
         is_near = remaining < pct_threshold or remaining < abs_threshold

@@ -41,6 +41,14 @@ KNOWN_COLUMNS: dict[str, str] = {
     "deductible_ils_gross": "deductible_ils_gross",
     "אקסס שח": "deductible_ils_gross",
     "אקסס ש\"ח": "deductible_ils_gross",
+    # branch (Excel column B)
+    "branch": "branch_name",
+    "branch_name": "branch_name",
+    "סניף": "branch_name",
+    # retainer anchor (Excel column C)
+    "retainer_anchor": "retainer_anchor_date",
+    "retainer_anchor_date": "retainer_anchor_date",
+    "תאריך עוגן": "retainer_anchor_date",
 }
 
 
@@ -122,6 +130,8 @@ def import_cases_from_excel(db: Session, file_bytes: bytes) -> dict:
             payload.deductible_ils_gross = (
                 Decimal(str(data["deductible_ils_gross"])) if data.get("deductible_ils_gross") not in (None, "") else None
             )
+            payload.branch_name = (str(data.get("branch_name") or "").strip() or None)
+            payload.retainer_anchor_date = _parse_date(data["retainer_anchor_date"]) if data.get("retainer_anchor_date") not in (None, "") else None
             create_case(db, payload)
             created += 1
         except HTTPException as e:

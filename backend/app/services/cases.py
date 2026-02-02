@@ -8,8 +8,8 @@ from sqlalchemy.orm import Session
 from app.models.case import Case
 from app.models.enums import CaseStatus
 from app.services.boi_fx import FxLookupError, get_usd_ils_rate
-from app.services.expenses import get_case_deductible_remaining
-from app.services.retainer import ensure_accruals_up_to
+from app.services.expenses import get_case_excess_remaining
+from app.services.retainer import ensure_accruals_up_to, get_retainer_anchor_date
 
 
 def q_ils(x: Decimal) -> Decimal:
@@ -43,11 +43,16 @@ def create_case(db: Session, payload) -> Case:
         fx_source = "IMPORTED"
         deductible_ils = q_ils(Decimal(str(payload.deductible_ils_gross)))
 
+    anchor = getattr(payload, "retainer_anchor_date", None) or get_retainer_anchor_date(payload.open_date)
+    branch = getattr(payload, "branch_name", None)
+
     c = Case(
         case_reference=payload.case_reference,
         case_type=payload.case_type,
         status=CaseStatus.OPEN,
         open_date=payload.open_date,
+        retainer_anchor_date=anchor,
+        branch_name=branch,
         deductible_usd=payload.deductible_usd,
         fx_rate_usd_ils=fx_rate,
         fx_date_used=fx_date_used,
@@ -60,8 +65,8 @@ def create_case(db: Session, payload) -> Case:
     db.commit()
     db.refresh(c)
 
-    # Retainer accruals: generate up to current month.
-    ensure_accruals_up_to(db, case_id=c.id, open_date=c.open_date)
+    # Retainer accruals: generate up to current month using anchor.
+    ensure_accruals_up_to(db, case_id=c.id, retainer_anchor_date=c.retainer_anchor_date)
     return c
 
 
@@ -76,13 +81,15 @@ def update_case_status(db: Session, *, case_id: int, status_value) -> Case:
 
 
 def to_case_out(db: Session, case: Case) -> dict:
-    remaining = get_case_deductible_remaining(db, case)
+    excess = get_case_excess_remaining(db, case)
     return {
         "id": case.id,
         "case_reference": case.case_reference,
         "case_type": case.case_type,
         "status": case.status,
         "open_date": case.open_date,
+        "retainer_anchor_date": case.retainer_anchor_date,
+        "branch_name": case.branch_name,
         "deductible_usd": case.deductible_usd,
         "fx_rate_usd_ils": case.fx_rate_usd_ils,
         "fx_date_used": case.fx_date_used,
@@ -90,7 +97,7 @@ def to_case_out(db: Session, case: Case) -> dict:
         "deductible_ils_gross": case.deductible_ils_gross,
         "insurer_started": case.insurer_started,
         "insurer_start_date": case.insurer_start_date,
-        "deductible_remaining_ils_gross": remaining,
+        "excess_remaining_ils_gross": excess,
     }
 
 
