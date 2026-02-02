@@ -28,6 +28,7 @@ export type FeeEventType =
 export type CaseOut = {
   id: number
   case_reference: string
+  case_name?: string | null
   case_type: CaseType
   status: CaseStatus
   open_date: string

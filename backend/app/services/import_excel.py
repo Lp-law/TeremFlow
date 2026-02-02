@@ -19,12 +19,14 @@ def _norm(s: Any) -> str:
 
 
 KNOWN_COLUMNS: dict[str, str] = {
-    # case reference / name
+    # case reference
     "case": "case_reference",
     "case_reference": "case_reference",
     "תיק": "case_reference",
-    "שם תיק": "case_reference",
     "מספר תיק": "case_reference",
+    # case name (plaintiff / display name)
+    "case_name": "case_name",
+    "שם תיק": "case_name",
     # type
     "case_type": "case_type",
     "סוג תיק": "case_type",
@@ -149,6 +151,7 @@ def import_cases_from_excel(db: Session, file_bytes: bytes) -> dict:
             payload.case_reference = str(data["case_reference"] or "").strip()
             if not payload.case_reference:
                 raise ValueError("Missing case_reference")
+            payload.case_name = (str(data.get("case_name") or "").strip() or None)
             payload.case_type = _parse_case_type(data["case_type"])
             payload.open_date = _parse_date(data["open_date"])
             payload.deductible_usd = Decimal(str(data["deductible_usd"])) if data.get("deductible_usd") not in (None, "") else None

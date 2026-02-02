@@ -16,6 +16,7 @@ class Case(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
 
     case_reference: Mapped[str] = mapped_column(String(120), index=True)  # e.g. internal ref / patient / claim no
+    case_name: Mapped[str | None] = mapped_column(String(200), nullable=True)  # plaintiff / display name (Excel import)
     case_type: Mapped[CaseType] = mapped_column(Enum(CaseType), index=True)
     status: Mapped[CaseStatus] = mapped_column(Enum(CaseStatus), default=CaseStatus.OPEN, index=True)
 

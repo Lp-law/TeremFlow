@@ -10,6 +10,7 @@ from app.models.enums import CaseStatus, CaseType
 
 class CaseCreate(BaseModel):
     case_reference: str = Field(min_length=2, max_length=120)
+    case_name: str | None = Field(default=None, max_length=200)
     case_type: CaseType
     open_date: dt.date
 
@@ -29,6 +30,7 @@ class CaseCreate(BaseModel):
 class CaseOut(BaseModel):
     id: int
     case_reference: str
+    case_name: str | None
     case_type: CaseType
     status: CaseStatus
     open_date: dt.date

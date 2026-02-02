@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { BackButton } from '../components/BackButton'
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../lib/api'
 import { Badge } from '../components/Badge'
@@ -47,12 +48,7 @@ export function NotificationsPage() {
             >
               רענון
             </button>
-            <Link
-              to="/dashboard"
-              className="btn btn-secondary"
-            >
-              חזרה לדשבורד
-            </Link>
+            <BackButton />
           </div>
         </div>
 

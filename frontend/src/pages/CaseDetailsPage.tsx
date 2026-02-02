@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
+import { BackButton } from '../components/BackButton'
 import { apiFetch } from '../lib/api'
 import { Badge } from '../components/Badge'
 import { formatILS, formatDateYMD, isOverdue, toNumber } from '../lib/format'
@@ -109,16 +110,15 @@ export function CaseDetailsPage() {
       <div className="mx-auto w-full max-w-6xl">
         <div className="flex items-center justify-between gap-4">
           <div className="text-right">
-            <div className="text-2xl font-bold">פרטי תיק</div>
-            <div className="text-sm text-muted mt-1">{caseItem ? caseItem.case_reference : `#${id}`}</div>
+            <div className="text-2xl font-bold">
+              {caseItem ? (caseItem.case_name ?? caseItem.case_reference) : `פרטי תיק #${id}`}
+            </div>
+            {caseItem?.case_name ? (
+              <div className="text-sm text-muted mt-1">מזהה: {caseItem.case_reference}</div>
+            ) : null}
           </div>
           <div className="flex gap-2">
-            <Link
-              to="/cases"
-              className="btn btn-secondary"
-            >
-              חזרה לרשימת תיקים
-            </Link>
+            <BackButton />
           </div>
         </div>
 
@@ -234,7 +234,7 @@ function OverviewTab({ caseItem, currentLegalStage }: { caseItem: CaseOut; curre
         <h3 className="text-sm font-semibold text-muted mb-3">זיהוי תיק</h3>
         <dl className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
           <ReadOnlyRow label="מזהה תיק" value={caseItem.case_reference} />
-          <ReadOnlyRow label="שם התיק" value={caseItem.case_reference} />
+          <ReadOnlyRow label="שם התיק" value={caseItem.case_name ?? caseItem.case_reference} />
           <ReadOnlyRow label="סניף" value={caseItem.branch_name ?? '—'} />
           <ReadOnlyRow label="סוג תיק" value={CASE_TYPE_LABEL[caseItem.case_type] ?? caseItem.case_type} />
           <ReadOnlyRow label="סטטוס" value={caseItem.status === 'OPEN' ? 'פתוח' : 'סגור'} />

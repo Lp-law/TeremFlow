@@ -48,8 +48,10 @@ def create_case(db: Session, payload) -> Case:
     snapshot = getattr(payload, "retainer_snapshot_ils_gross", None)
     expenses_snapshot = getattr(payload, "expenses_snapshot_ils_gross", None)
 
+    case_name_val = getattr(payload, "case_name", None)
     c = Case(
         case_reference=payload.case_reference,
+        case_name=(str(case_name_val).strip() or None) if case_name_val else None,
         case_type=payload.case_type,
         status=CaseStatus.OPEN,
         open_date=payload.open_date,
@@ -90,6 +92,7 @@ def to_case_out(db: Session, case: Case) -> dict:
     return {
         "id": case.id,
         "case_reference": case.case_reference,
+        "case_name": case.case_name,
         "case_type": case.case_type,
         "status": case.status,
         "open_date": case.open_date,

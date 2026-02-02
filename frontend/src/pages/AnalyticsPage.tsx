@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { BackButton } from '../components/BackButton'
 import { Bar, BarChart, CartesianGrid, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { apiFetch } from '../lib/api'
 import { formatILS, formatDateYMD, toNumber } from '../lib/format'
@@ -96,12 +97,7 @@ export function AnalyticsPage() {
             >
               התראות
             </Link>
-            <Link
-              to="/dashboard"
-              className="btn btn-secondary"
-            >
-              חזרה לדשבורד
-            </Link>
+            <BackButton />
           </div>
         </div>
 

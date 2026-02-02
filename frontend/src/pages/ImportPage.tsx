@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { BackButton } from '../components/BackButton'
 import { API_BASE_URL } from '../lib/api'
 
 export function ImportPage() {
@@ -43,12 +43,7 @@ export function ImportPage() {
             <div className="text-2xl font-bold">ייבוא מאקסל</div>
             <div className="text-sm text-muted mt-1">MVP: יצירת תיקים לפי עמודות מוכרות</div>
           </div>
-          <Link
-            to="/dashboard"
-            className="btn btn-secondary"
-          >
-            חזרה לדשבורד
-          </Link>
+          <BackButton />
         </div>
 
         <div className="mt-6 card p-6 text-right">

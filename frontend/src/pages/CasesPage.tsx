@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { BackButton } from '../components/BackButton'
 import { apiFetch } from '../lib/api'
 import { downloadTextFile, toCsv } from '../lib/csv'
 import { formatILS } from '../lib/format'
@@ -91,7 +92,12 @@ export function CasesPage() {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return items
-    return items.filter((c) => c.case_reference.toLowerCase().includes(q) || String(c.id).includes(q))
+    return items.filter(
+      (c) =>
+        c.case_reference.toLowerCase().includes(q) ||
+        (c.case_name?.toLowerCase().includes(q) ?? false) ||
+        String(c.id).includes(q)
+    )
   }, [items, query])
 
   async function exportCasesCsv() {
@@ -100,6 +106,7 @@ export function CasesPage() {
     try {
       const data = await apiFetch<CaseOut[]>('/cases/')
       const rows = data.map((c) => ({
+        case_name: c.case_name ?? '',
         case_reference: c.case_reference,
         retainer_snapshot_ils_gross: c.retainer_snapshot_ils_gross ?? '',
         expenses_snapshot_ils_gross: c.expenses_snapshot_ils_gross ?? '',
@@ -108,6 +115,7 @@ export function CasesPage() {
       }))
 
       const columns = [
+        'case_name',
         'case_reference',
         'retainer_snapshot_ils_gross',
         'expenses_snapshot_ils_gross',
@@ -175,12 +183,7 @@ export function CasesPage() {
             >
               התראות
             </Link>
-            <Link
-              to="/dashboard"
-              className="btn btn-secondary"
-            >
-              חזרה לדשבורד
-            </Link>
+            <BackButton />
           </div>
         </div>
 
@@ -229,7 +232,7 @@ export function CasesPage() {
                     <tr key={c.id} className="border-b border-border/30 hover:bg-surface/30">
                       <td className="py-3">
                         <Link to={`/cases/${c.id}`} className="text-primary hover:underline">
-                          {c.case_reference}
+                          {c.case_name ?? c.case_reference}
                         </Link>
                       </td>
                       <td className="py-3">{stageByCaseId[c.id] ?? 'לא הוגדר'}</td>
