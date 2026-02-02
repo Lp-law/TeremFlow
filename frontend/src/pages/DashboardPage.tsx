@@ -42,9 +42,12 @@ export function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const [downloadFallback, setDownloadFallback] = useState<{ url: string; filename: string } | null>(null)
+
   async function downloadBackup(): Promise<string | undefined> {
     setIsBackingUp(true)
     setBackupError(null)
+    setDownloadFallback(null)
     try {
       const { blob, filename, backupId } = await apiDownload('/backups/export', { method: 'POST' })
 
@@ -54,14 +57,25 @@ export function DashboardPage() {
 
       const safeName = filename || 'teremflow-backup.zip'
       const url = URL.createObjectURL(blob)
+      setDownloadFallback({ url, filename: safeName })
+
       const a = document.createElement('a')
       a.href = url
       a.download = safeName
-      a.style.display = 'none'
+      a.rel = 'noopener noreferrer'
+      a.setAttribute('download', safeName)
       document.body.appendChild(a)
       a.click()
-      document.body.removeChild(a)
-      setTimeout(() => URL.revokeObjectURL(url), 2000)
+
+      setTimeout(() => {
+        try {
+          document.body.removeChild(a)
+        } catch {
+          /* already removed */
+        }
+        setDownloadFallback(null)
+        URL.revokeObjectURL(url)
+      }, 30000)
 
       await refreshLastBackup()
       return backupId
@@ -129,6 +143,17 @@ export function DashboardPage() {
           <div className="text-right text-xs text-muted mt-3">
             הגיבוי יורד כ־ZIP עם קבצי CSV (כל טבלה בנפרד) + manifest.json — אפשר לפתוח את ה־CSV באקסל.
           </div>
+          {downloadFallback ? (
+            <div className="text-right text-sm mt-3">
+              <a
+                href={downloadFallback.url}
+                download={downloadFallback.filename}
+                className="text-primary hover:underline"
+              >
+                אם ההורדה לא החלה — לחץ כאן להורדה
+              </a>
+            </div>
+          ) : null}
         </div>
 
         <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4">

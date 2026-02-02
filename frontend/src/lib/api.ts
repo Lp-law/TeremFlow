@@ -24,11 +24,15 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     let detail = 'שגיאה'
     try {
       const data = await res.json()
-      detail = data?.detail || detail
+      if (Array.isArray(data?.detail)) {
+        detail = data.detail.map((d: any) => d?.msg || JSON.stringify(d)).join('; ')
+      } else {
+        detail = data?.detail || detail
+      }
     } catch {
       // ignore
     }
-    throw new Error(detail)
+    throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail))
   }
 
   if (res.status === 204) return undefined as any
