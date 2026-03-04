@@ -279,6 +279,36 @@ function OverviewTab({ caseItem, currentLegalStage }: { caseItem: CaseOut; curre
           <ReadOnlyRow label="תאריך עוגן ריטיינר" value={caseItem.retainer_anchor_date} />
         </dl>
       </section>
+
+      {caseItem.raw_import_fields_json && Object.keys(caseItem.raw_import_fields_json).length > 0 ? (
+        <section>
+          <h3 className="text-sm font-semibold text-muted mb-3">נתוני ייבוא גולמיים (לקריאה בלבד)</h3>
+          <div className="overflow-x-auto rounded-xl border border-border/60 bg-surface/30">
+            <table className="w-full text-sm">
+              <thead className="text-muted">
+                <tr className="border-b border-border/60">
+                  <th className="text-right py-3 px-4">שדה</th>
+                  <th className="text-right py-3 px-4">ערך</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(caseItem.raw_import_fields_json).map(([key, val]) => (
+                  <tr key={key} className="border-b border-border/30">
+                    <td className="py-2 px-4 font-medium">{key}</td>
+                    <td className="py-2 px-4 text-muted">
+                      {val === null || val === undefined
+                        ? '—'
+                        : typeof val === 'object'
+                          ? JSON.stringify(val)
+                          : String(val)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
     </div>
   )
 }

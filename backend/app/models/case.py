@@ -47,6 +47,8 @@ class Case(Base):
     legacy_fee_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Last selected performed stage codes (for "Create fee event from performed stages"). Updated on submit.
     performed_fee_stage_codes: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    # Raw Excel columns not mapped to operational fields (display-only; not used in calculations).
+    raw_import_fields_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

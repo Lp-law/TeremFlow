@@ -12,7 +12,10 @@ from sqlalchemy.orm import Session
 
 from app.models.enums import CaseType, FeeEventType
 from app.models.case import Case
-from app.services.cases import create_case, update_case_from_excel, EXCEL_UPDATE_FIELDS
+from app.services.cases import create_case, update_case_from_excel, merge_raw_import_fields, EXCEL_UPDATE_FIELDS
+
+# Logical fields that map to Case and drive billing/calculations. All other columns go to raw_import_fields_json.
+OPERATIONAL_FIELDS = EXCEL_UPDATE_FIELDS | {"case_reference"}
 
 
 def _norm(s: Any) -> str:
@@ -77,6 +80,7 @@ KNOWN_COLUMNS: dict[str, str] = {
     # Legacy free-text (e.g. "פירוט חיוב שכ״ט עו״ד") — read-only, not parsed
     "legacy_fee_text": "legacy_fee_text",
     "פירוט חיוב שכ״ט עו״ד": "legacy_fee_text",
+    'פירוט חיוב שכ"ט עו"ד': "legacy_fee_text",
     "fee_charges_raw": "legacy_fee_text",
     # Optional: prefill performed_fee_stage_codes (comma-separated); unknown codes ignored with warning
     "performed_fee_stage_codes": "performed_fee_stage_codes",
@@ -147,6 +151,38 @@ def _parse_performed_fee_stage_codes(v: Any) -> tuple[list[str] | None, list[str
     valid = [p for p in parts if p in ALLOWED_PERFORMED_CODES]
     unknown = [p for p in parts if p not in ALLOWED_PERFORMED_CODES]
     return (valid if valid else None), unknown
+
+
+def _parse_raw_value(v: Any) -> Any:
+    """Parse cell to a scalar for raw_import_fields_json: number, date, bool, or string. Empty -> None. No raise."""
+    if v is None or (isinstance(v, str) and not v.strip()):
+        return None
+    if isinstance(v, (dt.datetime, dt.date)):
+        return v.isoformat() if hasattr(v, "isoformat") else str(v)
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        return v
+    s = str(v).strip()
+    if s == "":
+        return None
+    try:
+        return int(s)
+    except ValueError:
+        pass
+    try:
+        return float(s)
+    except ValueError:
+        pass
+    try:
+        return dt.date.fromisoformat(s)
+    except Exception:
+        pass
+    if s.lower() in ("true", "yes", "1"):
+        return True
+    if s.lower() in ("false", "no", "0"):
+        return False
+    return s
 
 
 def _parse_case_type(v: Any) -> CaseType:
@@ -307,12 +343,25 @@ def import_cases_from_excel(db: Session, file_bytes: bytes) -> dict:
     }
 
 
+def _build_raw_from_row(header: list, col_map: dict[int, str], row: tuple, operational: set[str]) -> dict[str, Any]:
+    """Build raw_import_fields_json dict: keys = header names, values = parsed scalars. Only columns NOT in operational."""
+    raw: dict[str, Any] = {}
+    for idx in range(max(len(header), len(row))):
+        header_name = str(header[idx]).strip() if idx < len(header) and header[idx] is not None else f"col_{idx}"
+        value = row[idx] if idx < len(row) else None
+        if idx in col_map and col_map[idx] in operational:
+            continue
+        raw[header_name] = _parse_raw_value(value)
+    return raw
+
+
 def import_cases_from_excel_update(db: Session, file_bytes: bytes, *, overwrite_blanks: bool = False) -> dict:
     """
     Update existing cases by case_reference. Same header/column mapping as create-import.
-    Blank cells do not overwrite unless overwrite_blanks=True. No auto-create: missing case -> row error.
+    Operational fields -> Case columns; all other columns -> raw_import_fields_json (display-only).
+    Blank does not overwrite unless overwrite_blanks=True. No auto-create: missing case -> row error.
     """
-    _, col_map, data_rows = _build_col_map_and_rows(file_bytes)
+    header, col_map, data_rows = _build_col_map_and_rows(file_bytes)
     if "case_reference" not in col_map.values():
         raise HTTPException(status_code=400, detail="Missing required column: case_reference (for lookup)")
 
@@ -343,10 +392,15 @@ def import_cases_from_excel_update(db: Session, file_bytes: bytes, *, overwrite_
                     updates[k] = parsed[k]
                 elif overwrite_blanks and k in data:
                     updates[k] = None
-            if not updates:
-                continue
-            update_case_from_excel(db, case, updates, overwrite_blanks=overwrite_blanks)
-            updated += 1
+            raw = _build_raw_from_row(header, col_map, row, OPERATIONAL_FIELDS)
+            if updates:
+                update_case_from_excel(db, case, updates, overwrite_blanks=overwrite_blanks)
+            if raw:
+                merge_raw_import_fields(case, raw, overwrite_blanks=overwrite_blanks)
+                db.commit()
+                db.refresh(case)
+            if updates or raw:
+                updated += 1
         except HTTPException as e:
             errors.append({"row": r_i, "error": str(e.detail), "data": data})
         except Exception as e:

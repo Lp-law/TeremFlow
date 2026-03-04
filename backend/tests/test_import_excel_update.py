@@ -107,3 +107,33 @@ def test_update_legacy_fee_text(db, existing_case):
 
     db.refresh(existing_case)
     assert existing_case.legacy_fee_text == "פירוט חיוב מעודכן"
+
+
+def test_update_unknown_column_stored_in_raw_import_fields(db, existing_case):
+    """Excel columns not mapped to operational fields end up in raw_import_fields_json."""
+    header = ["case_reference", "retainer_paid_total_ils", "case_status_text"]
+    rows = [["REF-UPDATE-1", 1000, "active"]]
+    data = _xlsx_bytes(header, rows)
+    result = import_cases_from_excel_update(db, data)
+    assert result["updated"] == 1
+    assert result["error_count"] == 0
+
+    db.refresh(existing_case)
+    raw = existing_case.raw_import_fields_json or {}
+    assert "retainer_paid_total_ils" in raw
+    assert raw["retainer_paid_total_ils"] in (1000, 1000.0)
+    assert raw.get("case_status_text") == "active"
+
+
+def test_update_operational_and_raw_together(db, existing_case):
+    """Operational fields update Case; unknown columns go to raw. No billing change."""
+    header = ["case_reference", "case_name", "deductible_balance_ils"]
+    rows = [["REF-UPDATE-1", "Name From Excel", 3000]]
+    data = _xlsx_bytes(header, rows)
+    result = import_cases_from_excel_update(db, data)
+    assert result["updated"] == 1
+
+    db.refresh(existing_case)
+    assert existing_case.case_name == "Name From Excel"
+    raw = existing_case.raw_import_fields_json or {}
+    assert raw.get("deductible_balance_ils") in (3000, 3000.0)

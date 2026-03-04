@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from decimal import Decimal, ROUND_HALF_UP
+from typing import Any
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
@@ -124,6 +125,9 @@ def update_case_from_excel(db: Session, case: Case, updates: dict, *, overwrite_
             continue
         if value is None and not overwrite_blanks:
             continue
+        # When both deductible_ils_gross and deductible_usd present, prefer ILS (no FX).
+        if key == "deductible_usd" and "deductible_ils_gross" in updates and updates["deductible_ils_gross"] is not None:
+            continue
         if key == "case_name":
             case.case_name = (str(value).strip() or None) if value is not None else None
         elif key == "case_type":
@@ -188,6 +192,20 @@ def update_case_from_excel(db: Session, case: Case, updates: dict, *, overwrite_
     return case
 
 
+def merge_raw_import_fields(
+    case: Case, raw: dict[str, Any], *, overwrite_blanks: bool = False
+) -> None:
+    """Merge raw key/values into case.raw_import_fields_json. Display-only; not used in calculations."""
+    current = (case.raw_import_fields_json or {}).copy()
+    for k, v in raw.items():
+        if overwrite_blanks:
+            current[k] = v
+        else:
+            if v is not None and v != "":
+                current[k] = v
+    case.raw_import_fields_json = current
+
+
 def update_case_status(db: Session, *, case_id: int, status_value) -> Case:
     c = db.query(Case).filter(Case.id == case_id).first()
     if not c:
@@ -222,6 +240,7 @@ def to_case_out(db: Session, case: Case) -> dict:
         "historical_fee_stages": case.historical_fee_stages or [],
         "legacy_fee_text": case.legacy_fee_text,
         "performed_fee_stage_codes": case.performed_fee_stage_codes or [],
+        "raw_import_fields_json": case.raw_import_fields_json or {},
         "excess_remaining_ils_gross": excess,
     }
 

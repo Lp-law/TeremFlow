@@ -53,6 +53,7 @@ class CaseOut(BaseModel):
     historical_fee_stages: list[str]  # FeeEventType codes, read-only
     legacy_fee_text: str | None = None  # from Excel "פירוט חיוב שכ״ט עו״ד"
     performed_fee_stage_codes: list[str] | None = None  # last selection for stage-billing
+    raw_import_fields_json: dict | None = None  # display-only; Excel columns not mapped to operational fields
     excess_remaining_ils_gross: Decimal  # Excel P = M - J
 
 

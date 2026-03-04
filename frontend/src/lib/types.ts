@@ -43,6 +43,7 @@ export type CaseOut = {
   historical_fee_stages: string[]
   legacy_fee_text?: string | null
   performed_fee_stage_codes?: string[] | null
+  raw_import_fields_json?: Record<string, unknown> | null
   excess_remaining_ils_gross: string | number
   insurer_started: boolean
   insurer_start_date: string | null
