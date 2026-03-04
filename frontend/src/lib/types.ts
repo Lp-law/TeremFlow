@@ -95,7 +95,7 @@ export type FeeEvent = {
   computed_amount_ils_gross: string | number
   amount_covered_by_credit_ils_gross: string | number
   amount_due_cash_ils_gross: string | number
-  breakdown_json?: { codes?: string[]; base_total?: string; adjustment?: unknown; final_total?: string } | null
+  breakdown_json?: { codes?: string[]; new_codes?: string[]; base_total?: string; adjustment?: unknown; final_total?: string } | null
 }
 
 export type NotificationSeverity = 'info' | 'warning' | 'danger'
