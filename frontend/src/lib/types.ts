@@ -24,6 +24,8 @@ export type FeeEventType =
   | 'DEMAND_FIX'
   | 'DEMAND_HOURLY'
   | 'SMALL_CLAIMS_MANUAL'
+  | 'APPEAL'
+  | 'STAGE_BILLING'
 
 export type CaseOut = {
   id: number
@@ -39,6 +41,8 @@ export type CaseOut = {
   retainer_snapshot_through_month: string | null
   expenses_snapshot_ils_gross: string | number | null
   historical_fee_stages: string[]
+  legacy_fee_text?: string | null
+  performed_fee_stage_codes?: string[] | null
   excess_remaining_ils_gross: string | number
   insurer_started: boolean
   insurer_start_date: string | null
@@ -91,6 +95,7 @@ export type FeeEvent = {
   computed_amount_ils_gross: string | number
   amount_covered_by_credit_ils_gross: string | number
   amount_due_cash_ils_gross: string | number
+  breakdown_json?: { codes?: string[]; base_total?: string; adjustment?: unknown; final_total?: string } | null
 }
 
 export type NotificationSeverity = 'info' | 'warning' | 'danger'

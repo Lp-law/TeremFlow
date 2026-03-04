@@ -49,6 +49,7 @@ def create_case(db: Session, payload) -> Case:
     snapshot_through = getattr(payload, "retainer_snapshot_through_month", None)
     expenses_snapshot = getattr(payload, "expenses_snapshot_ils_gross", None)
     historical_fee_stages = getattr(payload, "historical_fee_stages", None)
+    legacy_fee_text = getattr(payload, "legacy_fee_text", None)
 
     case_name_val = getattr(payload, "case_name", None)
     c = Case(
@@ -70,6 +71,7 @@ def create_case(db: Session, payload) -> Case:
         retainer_snapshot_through_month=snapshot_through,
         expenses_snapshot_ils_gross=q_ils(Decimal(str(expenses_snapshot))) if expenses_snapshot is not None else None,
         historical_fee_stages=historical_fee_stages,
+        legacy_fee_text=legacy_fee_text,
     )
     db.add(c)
     db.commit()
@@ -120,6 +122,8 @@ def to_case_out(db: Session, case: Case) -> dict:
         "retainer_snapshot_through_month": case.retainer_snapshot_through_month,
         "expenses_snapshot_ils_gross": case.expenses_snapshot_ils_gross,
         "historical_fee_stages": case.historical_fee_stages or [],
+        "legacy_fee_text": case.legacy_fee_text,
+        "performed_fee_stage_codes": case.performed_fee_stage_codes or [],
         "excess_remaining_ils_gross": excess,
     }
 

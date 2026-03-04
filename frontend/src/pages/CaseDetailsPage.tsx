@@ -45,6 +45,8 @@ const FEE_EVENT_LABEL: Record<string, string> = {
   DEMAND_FIX: 'מכתב דרישה — קבוע',
   DEMAND_HOURLY: 'מכתב דרישה — שעתי',
   SMALL_CLAIMS_MANUAL: 'תביעות קטנות — ידני',
+  APPEAL: 'ערעור',
+  STAGE_BILLING: 'חיוב לפי שלבים',
 }
 
 export function CaseDetailsPage() {
@@ -57,7 +59,7 @@ export function CaseDetailsPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  type ModalKind = 'expense' | 'retainerPayment' | 'feeEvent'
+  type ModalKind = 'expense' | 'retainerPayment' | 'feeEvent' | 'stageBilling'
   const [activeModal, setActiveModal] = useState<ModalKind | null>(null)
   const [retainerReloadKey, setRetainerReloadKey] = useState(0)
   const [feesReloadKey, setFeesReloadKey] = useState(0)
@@ -183,7 +185,9 @@ export function CaseDetailsPage() {
                 <FeesPanel
                   caseId={caseItem.id}
                   historicalFeeStages={caseItem.historical_fee_stages ?? []}
+                  legacyFeeText={caseItem.legacy_fee_text ?? null}
                   onOpenAddFeeStage={() => setActiveModal('feeEvent')}
+                  onOpenStageBilling={() => setActiveModal('stageBilling')}
                   feesReloadKey={feesReloadKey}
                 />
               ) : null}
@@ -215,6 +219,17 @@ export function CaseDetailsPage() {
       ) : null}
       {caseItem && activeModal === 'feeEvent' ? (
         <AddFeeEventModal
+          caseId={caseItem.id}
+          onClose={() => setActiveModal(null)}
+          onSaved={async () => {
+            setActiveModal(null)
+            setFeesReloadKey((k) => k + 1)
+            await load()
+          }}
+        />
+      ) : null}
+      {caseItem && activeModal === 'stageBilling' ? (
+        <StageBillingModal
           caseId={caseItem.id}
           onClose={() => setActiveModal(null)}
           onSaved={async () => {
@@ -753,15 +768,27 @@ function AddRetainerPaymentModal({ caseId, onClose, onSaved }: { caseId: number;
   )
 }
 
+const STAGE_BILLING_GROUPS: { title: string; codes: string[] }[] = [
+  { title: 'שלבי בית משפט (1–5)', codes: ['COURT_STAGE_1_DEFENSE', 'COURT_STAGE_2_DAMAGES', 'COURT_STAGE_3_EVIDENCE', 'COURT_STAGE_4_PROOFS', 'COURT_STAGE_5_SUMMARIES'] },
+  { title: 'בית משפט — נוסף', codes: ['THIRD_PARTY_NOTICE', 'AMENDED_DEFENSE_PARTIAL', 'AMENDED_DEFENSE_FULL', 'ADDITIONAL_PROOF_HEARING'] },
+  { title: 'מכתב דרישה', codes: ['DEMAND_FIX', 'DEMAND_HOURLY'] },
+  { title: 'תביעות קטנות', codes: ['SMALL_CLAIMS_MANUAL'] },
+  { title: 'ערעור', codes: ['APPEAL'] },
+]
+
 function FeesPanel({
   caseId,
   historicalFeeStages,
+  legacyFeeText,
   onOpenAddFeeStage,
+  onOpenStageBilling,
   feesReloadKey,
 }: {
   caseId: number
   historicalFeeStages: string[]
+  legacyFeeText: string | null
   onOpenAddFeeStage: () => void
+  onOpenStageBilling: () => void
   feesReloadKey: number
 }) {
   const [items, setItems] = useState<FeeEvent[]>([])
@@ -800,6 +827,15 @@ function FeesPanel({
 
   return (
     <div className="space-y-6">
+      {legacyFeeText ? (
+        <div className="card-soft p-5">
+          <div className="text-right mb-2">
+            <div className="font-semibold">פירוט חיוב שכ״ט (ייבוא)</div>
+            <div className="text-sm text-muted mt-1">לקריאה בלבד</div>
+          </div>
+          <p className="text-sm text-right whitespace-pre-wrap">{legacyFeeText}</p>
+        </div>
+      ) : null}
       {hasHistorical ? (
         <div className="card-soft p-5">
           <div className="text-right mb-4">
@@ -844,17 +880,19 @@ function FeesPanel({
       </div>
 
       <div className="card-soft p-5">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="text-right">
             <div className="font-semibold">אירועי שכ״ט</div>
             <div className="text-sm text-muted mt-1">המערכת מקצה קרדיט ריטיינר לפי סדר כרונולוגי</div>
           </div>
-          <button
-            onClick={onOpenAddFeeStage}
-            className="btn btn-primary"
-          >
-            הוספת שלב שכ״ט
-          </button>
+          <div className="flex gap-2">
+            <button type="button" onClick={onOpenStageBilling} className="btn btn-secondary">
+              חיוב משלבי ביצוע
+            </button>
+            <button type="button" onClick={onOpenAddFeeStage} className="btn btn-primary">
+              הוספת שלב שכ״ט
+            </button>
+          </div>
         </div>
 
         <div className="mt-4 overflow-x-auto">
@@ -873,7 +911,14 @@ function FeesPanel({
               {items.map((e) => (
                 <tr key={e.id} className="border-b border-border/30 hover:bg-surface/30">
                   <td className="py-3">{formatDateYMD(e.event_date)}</td>
-                  <td className="py-3">{FEE_EVENT_LABEL[e.event_type] || e.event_type}</td>
+                  <td className="py-3">
+                    {e.event_type === 'STAGE_BILLING' && e.breakdown_json
+                      ? (() => {
+                          const codes = e.breakdown_json.new_codes ?? e.breakdown_json.codes ?? []
+                          return codes.length ? `${FEE_EVENT_LABEL[e.event_type]} (${codes.length} חדשים)` : FEE_EVENT_LABEL[e.event_type]
+                        })()
+                      : FEE_EVENT_LABEL[e.event_type] || e.event_type}
+                  </td>
                   <td className="py-3">{formatILS(e.computed_amount_ils_gross)}</td>
                   <td className="py-3">{formatILS(e.amount_covered_by_credit_ils_gross)}</td>
                   <td className="py-3">{formatILS(e.amount_due_cash_ils_gross)}</td>
@@ -1021,6 +1066,258 @@ function AddFeeEventModal({ caseId, onClose, onSaved }: { caseId: number; onClos
             className="btn btn-primary h-12 px-6 rounded-2xl"
           >
             שמירה
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+type RateRow = { code: string; amount_ils: number }
+
+function StageBillingModal({ caseId, onClose, onSaved }: { caseId: number; onClose: () => void; onSaved: () => void }) {
+  const today = new Date().toISOString().slice(0, 10)
+  const [eventDate, setEventDate] = useState(today)
+  const [selectedCodes, setSelectedCodes] = useState<Set<string>>(new Set())
+  const [adjustmentKind, setAdjustmentKind] = useState<'DISCOUNT' | 'SURCHARGE'>('DISCOUNT')
+  const [adjustmentAmount, setAdjustmentAmount] = useState('')
+  const [adjustmentReason, setAdjustmentReason] = useState('')
+
+  const [rates, setRates] = useState<RateRow[]>([])
+  const [billedCodes, setBilledCodes] = useState<string[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    setError(null)
+    Promise.all([
+      apiFetch<RateRow[]>('/fee-stage-rates'),
+      apiFetch<string[]>(`/cases/${caseId}/fees/billed-codes`),
+    ])
+      .then(([r, b]) => {
+        if (!cancelled) {
+          setRates(r)
+          setBilledCodes(b)
+        }
+      })
+      .catch((e: any) => {
+        if (!cancelled) setError(e?.message || 'שגיאה')
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [caseId])
+
+  const rateByCode = useMemo(() => {
+    const m: Record<string, number> = {}
+    rates.forEach((r) => { m[r.code] = r.amount_ils })
+    return m
+  }, [rates])
+
+  const billedSet = useMemo(() => new Set(billedCodes), [billedCodes])
+  const newCodes = useMemo(() => Array.from(selectedCodes).filter((c) => !billedSet.has(c)), [selectedCodes, billedSet])
+  const alreadyBilledSelected = useMemo(() => Array.from(selectedCodes).filter((c) => billedSet.has(c)), [selectedCodes, billedSet])
+
+  const baseTotalSelected = useMemo(() => {
+    return Array.from(selectedCodes).reduce((sum, code) => sum + (rateByCode[code] ?? 0), 0)
+  }, [selectedCodes, rateByCode])
+
+  const deltaTotal = useMemo(() => {
+    return newCodes.reduce((sum, code) => sum + (rateByCode[code] ?? 0), 0)
+  }, [newCodes, rateByCode])
+
+  const adjustmentValue = useMemo(() => {
+    const amt = parseFloat(adjustmentAmount)
+    return !Number.isNaN(amt) && amt >= 0 ? amt : 0
+  }, [adjustmentAmount])
+
+  const finalDeltaTotal = useMemo(() => {
+    if (adjustmentValue <= 0) return deltaTotal
+    if (adjustmentKind === 'DISCOUNT') return Math.max(0, deltaTotal - adjustmentValue)
+    return deltaTotal + adjustmentValue
+  }, [deltaTotal, adjustmentKind, adjustmentValue])
+
+  const noNewCodes = newCodes.length === 0
+  const [confirmZeroNewCodes, setConfirmZeroNewCodes] = useState(false)
+
+  function toggleCode(code: string) {
+    setSelectedCodes((prev) => {
+      const next = new Set(prev)
+      if (next.has(code)) next.delete(code)
+      else next.add(code)
+      return next
+    })
+  }
+
+  async function submit() {
+    if (selectedCodes.size === 0) {
+      setError('נא לבחור לפחות שלב אחד (בוצעו עד כה)')
+      return
+    }
+    if (noNewCodes && !confirmZeroNewCodes) {
+      setError('אין קודים חדשים לחיוב')
+      return
+    }
+    setError(null)
+    setIsSubmitting(true)
+    try {
+      const payload: any = {
+        event_date: eventDate,
+        codes: Array.from(selectedCodes),
+        confirm_zero_new_codes: noNewCodes && confirmZeroNewCodes,
+      }
+      if (adjustmentAmount.trim() !== '' && !Number.isNaN(parseFloat(adjustmentAmount))) {
+        payload.adjustment = {
+          kind: adjustmentKind,
+          amount_ils: parseFloat(adjustmentAmount),
+          reason: adjustmentReason.trim(),
+        }
+      }
+      await apiFetch(`/cases/${caseId}/fees/stage-billing`, { method: 'POST', body: JSON.stringify(payload) })
+      onSaved()
+    } catch (e: any) {
+      setError(e?.message || 'שגיאה')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="modal">
+        <div className="modal-overlay" />
+        <div className="modal-panel max-w-[680px]">
+          <div className="text-right text-muted">טוען...</div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="modal">
+      <div className="modal-overlay" onClick={onClose} />
+      <div className="modal-panel max-w-[800px] max-h-[90vh] overflow-y-auto">
+        <div className="text-right">
+          <div className="text-lg font-semibold">חיוב מצטבר משלבי ביצוע</div>
+          <div className="text-sm text-muted mt-1">בחרו את כל השלבים שבוצעו עד כה. יחויבו רק שלבים שעדיין לא חובו. אפשר להוסיף הנחה או תוספת על הסכום החדש.</div>
+        </div>
+
+        <div className="mt-4">
+          <Field label="תאריך אירוע">
+            <input className="input w-full max-w-[200px]" type="date" value={eventDate} onChange={(e) => setEventDate(e.target.value)} />
+          </Field>
+        </div>
+
+        <div className="mt-5 space-y-4">
+          {STAGE_BILLING_GROUPS.map((group) => (
+            <div key={group.title} className="border border-border/50 rounded-xl p-4">
+              <div className="text-sm font-semibold text-muted mb-3">{group.title}</div>
+              <div className="flex flex-wrap gap-4">
+                {group.codes.map((code) => {
+                  const amount = rateByCode[code]
+                  const isBilled = billedCodes.includes(code)
+                  const selected = selectedCodes.has(code)
+                  return (
+                    <label key={code} className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        onChange={() => toggleCode(code)}
+                      />
+                      <span>{FEE_EVENT_LABEL[code] ?? code}</span>
+                      {amount != null && <span className="text-muted text-sm">({formatILS(amount)})</span>}
+                      {isBilled && selected && <span className="text-amber-400 text-xs">כבר חויב</span>}
+                    </label>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {alreadyBilledSelected.length > 0 ? (
+          <div className="mt-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-right text-sm text-amber-200">
+            שלבים שכבר חובו: {alreadyBilledSelected.map((c) => FEE_EVENT_LABEL[c] ?? c).join(', ')} — לא יחויבו שוב.
+          </div>
+        ) : null}
+
+        <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="text-right p-4 rounded-xl bg-surface/50">
+            <div className="text-sm text-muted">סה״כ נבחר (לפי תעריף)</div>
+            <div className="text-xl font-bold mt-1">{formatILS(baseTotalSelected)}</div>
+          </div>
+          <div className="text-right p-4 rounded-xl bg-surface/50">
+            <div className="text-sm text-muted">שלבים חדשים לחיוב</div>
+            <div className="text-sm mt-1">
+              {newCodes.length === 0 ? (
+                <span className="text-muted">אין — כולם כבר חובו</span>
+              ) : (
+                newCodes.map((c) => FEE_EVENT_LABEL[c] ?? c).join(' • ')
+              )}
+            </div>
+            <div className="text-lg font-bold mt-2">{formatILS(deltaTotal)}</div>
+          </div>
+          <div className="space-y-3">
+            <div className="text-sm font-semibold text-muted">התאמה (אופציונלי) — סכום בש״ח בלבד</div>
+            <select className="input" value={adjustmentKind} onChange={(e) => setAdjustmentKind(e.target.value as 'DISCOUNT' | 'SURCHARGE')}>
+              <option value="DISCOUNT">הנחה</option>
+              <option value="SURCHARGE">תוספת</option>
+            </select>
+            <input
+              className="input"
+              type="number"
+              min={0}
+              step={0.01}
+              placeholder="סכום (₪)"
+              value={adjustmentAmount}
+              onChange={(e) => setAdjustmentAmount(e.target.value)}
+            />
+            <input
+              className="input"
+              placeholder="סיבת ההתאמה"
+              value={adjustmentReason}
+              onChange={(e) => setAdjustmentReason(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="mt-4 p-4 rounded-xl border border-primary/40 bg-primary/5 text-right">
+          <div className="text-sm text-muted">סכום לחיוב (לאחר התאמה)</div>
+          <div className="text-2xl font-bold mt-1">{formatILS(finalDeltaTotal)}</div>
+        </div>
+
+        {noNewCodes ? (
+          <div className="mt-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-right text-sm">
+            <p className="text-amber-200 mb-2">אין קודים חדשים לחיוב</p>
+            <label className="flex items-center gap-2 justify-end cursor-pointer">
+              <input type="checkbox" checked={confirmZeroNewCodes} onChange={(e) => setConfirmZeroNewCodes(e.target.checked)} />
+              <span>אישור: ליצור אירוע עם סכום 0 (תיעוד בלבד)</span>
+            </label>
+          </div>
+        ) : null}
+
+        {error ? <div className="mt-4 text-sm text-red-300 text-right">{error}</div> : null}
+
+        <div className="mt-6 flex gap-3 justify-end">
+          <button type="button" onClick={onClose} className="btn btn-secondary" disabled={isSubmitting}>ביטול</button>
+          <button
+            type="button"
+            onClick={submit}
+            className="btn btn-primary"
+            disabled={isSubmitting || selectedCodes.size === 0 || (noNewCodes && !confirmZeroNewCodes)}
+            title={noNewCodes ? 'אין קודים חדשים לחיוב' : finalDeltaTotal > 0 ? `חיוב ${formatILS(finalDeltaTotal)} (שלבים חדשים בלבד)` : undefined}
+          >
+            {isSubmitting
+              ? 'שומר…'
+              : noNewCodes && !confirmZeroNewCodes
+                ? 'אין קודים חדשים לחיוב'
+                : noNewCodes && confirmZeroNewCodes
+                  ? 'יצירת אירוע 0 ש״ח (תיעוד)'
+                  : `חיוב ${formatILS(finalDeltaTotal)} (שלבים חדשים בלבד)`}
           </button>
         </div>
       </div>

@@ -14,6 +14,15 @@ def test_compute_fee_amount_hourly_quantity():
     assert compute_fee_amount(FeeEventType.DEMAND_HOURLY, quantity=3) == Decimal("2100.00")
 
 
+def test_compute_fee_amount_appeal():
+    assert compute_fee_amount(FeeEventType.APPEAL) == Decimal("15000.00")
+
+
+def test_compute_fee_amount_stage_billing_raises():
+    with pytest.raises(ValueError, match="STAGE_BILLING"):
+        compute_fee_amount(FeeEventType.STAGE_BILLING)
+
+
 def test_small_claims_requires_override():
     with pytest.raises(ValueError):
         compute_fee_amount(FeeEventType.SMALL_CLAIMS_MANUAL)

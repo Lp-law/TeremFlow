@@ -70,9 +70,20 @@ KNOWN_COLUMNS: dict[str, str] = {
     # Historical fee stages: comma-separated FeeEventType codes
     "historical_fee_stages": "historical_fee_stages",
     "שלבי שכ״ט עבר": "historical_fee_stages",
+    # Legacy free-text (e.g. "פירוט חיוב שכ״ט עו״ד") — read-only, not parsed
+    "legacy_fee_text": "legacy_fee_text",
+    "פירוט חיוב שכ״ט עו״ד": "legacy_fee_text",
+    "fee_charges_raw": "legacy_fee_text",
+    # Optional: prefill performed_fee_stage_codes (comma-separated); unknown codes ignored with warning
+    "performed_fee_stage_codes": "performed_fee_stage_codes",
+    "שלבים שבוצעו": "performed_fee_stage_codes",
 }
 
 VALID_FEE_EVENT_TYPES = frozenset(e.value for e in FeeEventType)
+# STAGE_BILLING is composite only; do not allow in historical_fee_stages
+ALLOWED_HISTORICAL_FEE_STAGES = frozenset(e.value for e in FeeEventType if e != FeeEventType.STAGE_BILLING)
+# Same set for performed_fee_stage_codes (stage-billing codes that have rates)
+ALLOWED_PERFORMED_CODES = ALLOWED_HISTORICAL_FEE_STAGES
 
 
 def _parse_date(v: Any) -> dt.date:
@@ -110,10 +121,28 @@ def _parse_historical_fee_stages(v: Any) -> list[str] | None:
     parts = [p.strip() for p in s.split(",") if p.strip()]
     if not parts:
         return None
-    invalid = [p for p in parts if p not in VALID_FEE_EVENT_TYPES]
+    invalid = [p for p in parts if p not in ALLOWED_HISTORICAL_FEE_STAGES]
     if invalid:
-        raise ValueError(f"historical_fee_stages: קוד לא מוכר: {invalid[0]}. קודים חוקיים: {', '.join(sorted(VALID_FEE_EVENT_TYPES))}")
+        raise ValueError(f"historical_fee_stages: קוד לא מוכר: {invalid[0]}. קודים חוקיים: {', '.join(sorted(ALLOWED_HISTORICAL_FEE_STAGES))}")
     return parts
+
+
+def _parse_performed_fee_stage_codes(v: Any) -> tuple[list[str] | None, list[str]]:
+    """
+    Parse comma-separated performed_fee_stage_codes. Returns (valid_codes, unknown_codes).
+    Unknown codes are ignored (not added to valid); valid can be empty. Does not raise.
+    """
+    if v is None or (isinstance(v, str) and not v.strip()):
+        return None, []
+    s = str(v).strip()
+    if not s:
+        return None, []
+    parts = [p.strip() for p in s.split(",") if p.strip()]
+    if not parts:
+        return None, []
+    valid = [p for p in parts if p in ALLOWED_PERFORMED_CODES]
+    unknown = [p for p in parts if p not in ALLOWED_PERFORMED_CODES]
+    return (valid if valid else None), unknown
 
 
 def _parse_case_type(v: Any) -> CaseType:
@@ -163,6 +192,7 @@ def import_cases_from_excel(db: Session, file_bytes: bytes) -> dict:
     created = 0
     skipped_empty_rows = 0
     errors: list[dict[str, Any]] = []
+    warnings: list[dict[str, Any]] = []
 
     for r_i, row in enumerate(rows[1:], start=2):
         if not any(row):
@@ -198,6 +228,12 @@ def import_cases_from_excel(db: Session, file_bytes: bytes) -> dict:
                     last_day_prev = first_this_month - dt.timedelta(days=1)
                     payload.retainer_snapshot_through_month = dt.date(last_day_prev.year, last_day_prev.month, 1)
             payload.historical_fee_stages = _parse_historical_fee_stages(data.get("historical_fee_stages"))
+            raw = data.get("legacy_fee_text")
+            payload.legacy_fee_text = (str(raw).strip() or None) if raw not in (None, "") else None
+            performed_valid, performed_unknown = _parse_performed_fee_stage_codes(data.get("performed_fee_stage_codes"))
+            if performed_unknown:
+                warnings.append({"row": r_i, "message": f"unknown performed_fee_stage_codes ignored: {performed_unknown}", "data": data})
+            payload.performed_fee_stage_codes = performed_valid
             create_case(db, payload)
             created += 1
         except HTTPException as e:
@@ -211,6 +247,8 @@ def import_cases_from_excel(db: Session, file_bytes: bytes) -> dict:
         "skipped_empty_rows": skipped_empty_rows,
         "errors": errors[:50],
         "error_count": len(errors),
+        "warnings": warnings[:50],
+        "warning_count": len(warnings),
     }
 
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime as dt
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, Enum, ForeignKey, Integer, Numeric, func
+from sqlalchemy import Date, DateTime, Enum, ForeignKey, Integer, JSON, Numeric, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -29,6 +29,8 @@ class FeeEvent(Base):
     amount_due_cash_ils_gross: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
 
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # For event_type=STAGE_BILLING: full breakdown { codes, rates, base_total, adjustment, final_total }
+    breakdown_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     case = relationship("Case", back_populates="fee_events")
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime as dt
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, DateTime, Enum, Integer, JSON, Numeric, String, func
+from sqlalchemy import Boolean, Date, DateTime, Enum, Integer, JSON, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -43,6 +43,10 @@ class Case(Base):
     expenses_snapshot_ils_gross: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     # Historical fee stages from import (Excel historical_fee_stages). List of FeeEventType codes. Read-only.
     historical_fee_stages: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    # Legacy free-text from Excel (e.g. "פירוט חיוב שכ״ט עו״ד"). Read-only.
+    legacy_fee_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Last selected performed stage codes (for "Create fee event from performed stages"). Updated on submit.
+    performed_fee_stage_codes: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
 
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

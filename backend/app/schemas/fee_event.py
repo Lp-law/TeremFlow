@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -24,5 +25,22 @@ class FeeEventOut(BaseModel):
     computed_amount_ils_gross: Decimal
     amount_covered_by_credit_ils_gross: Decimal
     amount_due_cash_ils_gross: Decimal
+    breakdown_json: dict | None = None
+
+
+# --- Stage billing (create fee event from performed stages) ---
+
+
+class StageBillingAdjustment(BaseModel):
+    kind: Literal["DISCOUNT", "SURCHARGE"]
+    amount_ils: Decimal = Field(..., ge=0)  # amount in ILS only
+    reason: str = ""
+
+
+class StageBillingCreate(BaseModel):
+    event_date: dt.date
+    codes: list[str] = Field(..., min_length=1)  # Performed-to-date (full set); only new codes are charged
+    adjustment: StageBillingAdjustment | None = None
+    confirm_zero_new_codes: bool = False  # If true, allow creating event when new_codes is empty (0 amount)
 
 

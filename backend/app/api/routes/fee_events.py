@@ -5,10 +5,11 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import require_auth
 from app.db.session import get_db
-from app.schemas.fee_event import FeeEventCreate, FeeEventOut
+from app.schemas.fee_event import FeeEventCreate, FeeEventOut, StageBillingCreate
 from app.services import fees as fee_service
 
 router = APIRouter()
+
 
 def _to_out(e) -> FeeEventOut:
     return FeeEventOut(
@@ -20,6 +21,7 @@ def _to_out(e) -> FeeEventOut:
         computed_amount_ils_gross=e.computed_amount_ils_gross,
         amount_covered_by_credit_ils_gross=e.amount_covered_by_credit_ils_gross,
         amount_due_cash_ils_gross=e.amount_due_cash_ils_gross,
+        breakdown_json=e.breakdown_json,
     )
 
 
@@ -27,6 +29,23 @@ def _to_out(e) -> FeeEventOut:
 def list_fee_events(case_id: int, db: Session = Depends(get_db), _=Depends(require_auth)):
     items = fee_service.list_fee_events(db, case_id)
     return [_to_out(e) for e in items]
+
+
+@router.get("/billed-codes", response_model=list[str])
+def get_billed_codes(case_id: int, db: Session = Depends(get_db), _=Depends(require_auth)):
+    """Codes already billed in STAGE_BILLING events for this case (for dedupe warning in modal)."""
+    return fee_service.get_billed_codes_for_case(db, case_id)
+
+
+@router.post("/stage-billing", response_model=FeeEventOut)
+def create_stage_billing(
+    case_id: int, payload: StageBillingCreate, db: Session = Depends(get_db), user=Depends(require_auth)
+):
+    """Create one FeeEvent (STAGE_BILLING) from selected codes + adjustment; update case.performed_fee_stage_codes."""
+    e = fee_service.create_stage_billing_event(db, case_id=case_id, payload=payload, user_id=user.id)
+    from app.services.activity_log import log_activity
+    log_activity(db, action="fee_event_add", entity_type="fee_event", entity_id=e.id, user_id=user.id, details={"case_id": case_id, "stage_billing": True})
+    return _to_out(e)
 
 
 @router.post("/", response_model=FeeEventOut)

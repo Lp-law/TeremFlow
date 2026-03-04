@@ -50,6 +50,10 @@ class FeeEventType(str, enum.Enum):
     DEMAND_HOURLY = "DEMAND_HOURLY"  # quantity = hours
     # Small claims
     SMALL_CLAIMS_MANUAL = "SMALL_CLAIMS_MANUAL"
+    # Appeal (ערעור)
+    APPEAL = "APPEAL"
+    # Composite event created from "Create fee event from performed stages" (amount from breakdown)
+    STAGE_BILLING = "STAGE_BILLING"
 
 
 class NotificationType(str, enum.Enum):

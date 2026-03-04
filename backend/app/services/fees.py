@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.models.case import Case
 from app.models.enums import FeeEventType
 from app.models.fee_event import FeeEvent
+from app.models.fee_stage_rate import FeeStageRate
 from app.models.retainer import RetainerPayment
 from app.services.deductible import q_ils
 
@@ -32,8 +33,14 @@ def compute_fee_amount(event_type: FeeEventType, *, quantity: int = 1, amount_ov
         FeeEventType.DEMAND_FIX: Decimal("5000.00"),
         FeeEventType.DEMAND_HOURLY: Decimal("700.00"),
         FeeEventType.SMALL_CLAIMS_MANUAL: Decimal("0.00"),  # must override
+        FeeEventType.APPEAL: Decimal("15000.00"),
+        # STAGE_BILLING: amount comes from breakdown; do not use compute_fee_amount
     }
-    base = mapping[event_type]
+    if event_type == FeeEventType.STAGE_BILLING:
+        raise ValueError("STAGE_BILLING amount must be set from breakdown; use stage-billing endpoint")
+    base = mapping.get(event_type)
+    if base is None:
+        raise ValueError(f"Unknown fee event type: {event_type}")
     if event_type == FeeEventType.SMALL_CLAIMS_MANUAL:
         raise ValueError("SMALL_CLAIMS_MANUAL requires amount_override_ils_gross")
     if event_type in (FeeEventType.DEMAND_HOURLY, FeeEventType.ADDITIONAL_PROOF_HEARING):
@@ -114,5 +121,116 @@ def add_fee_event(db: Session, *, case_id: int, payload) -> FeeEvent:
 
 def list_fee_events(db: Session, case_id: int) -> list[FeeEvent]:
     return db.query(FeeEvent).filter(FeeEvent.case_id == case_id).order_by(FeeEvent.event_date.desc(), FeeEvent.id.desc()).all()
+
+
+def get_fee_stage_rates(db: Session) -> list[FeeStageRate]:
+    return db.query(FeeStageRate).filter(FeeStageRate.is_active).order_by(FeeStageRate.code).all()
+
+
+def get_billed_codes_for_case(db: Session, case_id: int) -> list[str]:
+    """Codes already billed in any STAGE_BILLING event (union of new_codes or legacy 'codes' per event)."""
+    events = (
+        db.query(FeeEvent)
+        .filter(FeeEvent.case_id == case_id, FeeEvent.event_type == FeeEventType.STAGE_BILLING)
+        .all()
+    )
+    seen: set[str] = set()
+    for e in events:
+        if not e.breakdown_json:
+            continue
+        # New format has new_codes; legacy has codes (the charged set)
+        charged = e.breakdown_json.get("new_codes") or e.breakdown_json.get("codes") or []
+        for c in charged:
+            if c and c not in seen:
+                seen.add(c)
+    return sorted(seen)
+
+
+def create_stage_billing_event(db: Session, *, case_id: int, payload, user_id: int) -> FeeEvent:
+    """
+    Cumulative stage billing: charge only for NEW codes (codes_selected - codes_already_billed).
+    Create one FeeEvent with amount = delta_total (+ adjustment); store full breakdown.
+    """
+    case = db.query(Case).filter(Case.id == case_id).first()
+    if not case:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+
+    codes_selected = sorted(set(payload.codes))
+    if not codes_selected:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="At least one code required")
+
+    codes_already_billed = get_billed_codes_for_case(db, case_id)
+    already_set = set(codes_already_billed)
+    new_codes = sorted([c for c in codes_selected if c not in already_set])
+
+    # Resolve rates for all selected (so we can show base_total_selected and delta_total)
+    all_codes = sorted(set(codes_selected) | set(new_codes))
+    rates_rows = db.query(FeeStageRate).filter(FeeStageRate.code.in_(all_codes), FeeStageRate.is_active).all()
+    rates_map = {r.code: Decimal(str(r.amount_ils)) for r in rates_rows}
+    missing = [c for c in codes_selected if c not in rates_map]
+    if missing:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unknown or inactive rate for: {missing}")
+
+    base_total_selected = q_ils(sum(rates_map[c] for c in codes_selected))
+    delta_total = q_ils(sum(rates_map[c] for c in new_codes))
+
+    confirm_zero = getattr(payload, "confirm_zero_new_codes", False)
+    if not new_codes and not confirm_zero:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No new codes to bill",
+        )
+
+    # Adjustment (amount_ils only) applied to delta_total
+    final_delta_total = delta_total
+    adjustment_payload: dict | None = None
+    if payload.adjustment is not None:
+        adj = payload.adjustment
+        adj_val = q_ils(adj.amount_ils)
+        if adj.kind == "DISCOUNT":
+            final_delta_total = q_ils(delta_total - adj_val)
+            if final_delta_total < 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Discount exceeds new charges",
+                )
+        else:
+            final_delta_total = q_ils(delta_total + adj_val)
+        adjustment_payload = {
+            "kind": adj.kind,
+            "amount_ils": str(adj.amount_ils),
+            "reason": adj.reason,
+        }
+
+    breakdown = {
+        "codes_selected": codes_selected,
+        "codes_already_billed": codes_already_billed,
+        "new_codes": new_codes,
+        "rates": {c: str(rates_map[c]) for c in codes_selected},
+        "base_total_selected": str(base_total_selected),
+        "delta_total": str(delta_total),
+        "adjustment": adjustment_payload,
+        "final_delta_total": str(final_delta_total),
+    }
+
+    case.performed_fee_stage_codes = codes_selected
+    e = FeeEvent(
+        case_id=case_id,
+        event_type=FeeEventType.STAGE_BILLING,
+        event_date=payload.event_date,
+        quantity=1,
+        amount_override_ils_gross=None,
+        computed_amount_ils_gross=final_delta_total,
+        amount_covered_by_credit_ils_gross=Decimal("0.00"),
+        amount_due_cash_ils_gross=final_delta_total,
+        breakdown_json=breakdown,
+    )
+    db.add(e)
+    db.commit()
+    db.refresh(e)
+    db.refresh(case)
+    apply_retainer_credit(db, case_id=case_id)
+    db.refresh(e)
+    return e
 
 
