@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { BackButton } from '../components/BackButton'
-import { API_BASE_URL } from '../lib/api'
+import { API_BASE_URL, getCsrfHeadersForMutation } from '../lib/api'
 
 type ImportMode = 'create' | 'update'
 
@@ -42,7 +42,7 @@ export function ImportPage() {
       const r = await fetch(`${API_BASE_URL}/admin/wipe-case-data`, {
         method: 'POST',
         credentials: 'include',
-        headers: { 'X-Wipe-Token': wipeToken.trim(), 'Content-Type': 'application/json' },
+        headers: { ...getCsrfHeadersForMutation(), 'X-Wipe-Token': wipeToken.trim(), 'Content-Type': 'application/json' },
       })
       if (!r.ok) {
         const d = await r.json().catch(() => ({}))
@@ -69,7 +69,12 @@ export function ImportPage() {
         ? `${API_BASE_URL}/import/excel-update`
         : `${API_BASE_URL}/import/excel`
       if (mode === 'update' && overwriteBlanks) url += '?overwrite_blanks=true'
-      const res = await fetch(url, { method: 'POST', body: form, credentials: 'include' })
+      const res = await fetch(url, {
+        method: 'POST',
+        body: form,
+        credentials: 'include',
+        headers: getCsrfHeadersForMutation(),
+      })
       if (!res.ok) {
         let detail = 'שגיאה'
         try {

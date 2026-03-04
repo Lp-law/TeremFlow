@@ -13,6 +13,12 @@ function getCsrfToken(): string | undefined {
   return m ? decodeURIComponent(m[1]) : undefined
 }
 
+/** Headers to add to any non-GET request for CSRF (cookie name: teremflow_csrf, header: X-CSRF-Token). Do not set Content-Type when body is FormData. */
+export function getCsrfHeadersForMutation(): Record<string, string> {
+  const t = getCsrfToken()
+  return t ? { 'X-CSRF-Token': t } : {}
+}
+
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const method = (init?.method || 'GET').toUpperCase()
   const csrf = getCsrfToken()
