@@ -11,6 +11,7 @@ from app.core.config import settings
 from app.core.security import create_access_token, create_csrf_token
 from app.db.session import get_db
 from app.models.backup import BackupRecord
+from app.models.enums import UserRole
 from app.models.user import User
 from app.schemas.auth import LoginRequest, UserOut
 from app.services.users import authenticate_user
@@ -55,35 +56,38 @@ def logout(
     db: Session = Depends(get_db),
     user: User | None = Depends(get_optional_user),
     backup_id: str | None = Header(None, alias="X-Backup-Id"),
+    x_skip_backup: str | None = Header(None, alias="X-Skip-Backup"),
 ):
-    # If the request is authenticated, enforce "backup required before logout".
+    # If the request is authenticated, enforce "backup required before logout" (admin may override).
     if user is not None:
-        if not backup_id:
+        admin_skip = user.role == UserRole.ADMIN and (x_skip_backup or "").strip().lower() == "true"
+        if not admin_skip and not backup_id:
             raise HTTPException(
                 status_code=status.HTTP_428_PRECONDITION_REQUIRED,
                 detail="לפני התנתקות חובה לבצע גיבוי (Backup).",
             )
-        try:
-            bid = int(backup_id)
-        except Exception:
-            raise HTTPException(status_code=status.HTTP_428_PRECONDITION_REQUIRED, detail="Backup ID לא תקין.")
+        if not admin_skip:
+            try:
+                bid = int(backup_id)
+            except Exception:
+                raise HTTPException(status_code=status.HTTP_428_PRECONDITION_REQUIRED, detail="Backup ID לא תקין.")
 
-        rec = db.query(BackupRecord).filter(BackupRecord.id == bid, BackupRecord.created_by_user_id == user.id).first()
-        if not rec:
-            raise HTTPException(
-                status_code=status.HTTP_428_PRECONDITION_REQUIRED,
-                detail="לא נמצא גיבוי מתאים למשתמש. יש לבצע גיבוי מחדש לפני התנתקות.",
-            )
+            rec = db.query(BackupRecord).filter(BackupRecord.id == bid, BackupRecord.created_by_user_id == user.id).first()
+            if not rec:
+                raise HTTPException(
+                    status_code=status.HTTP_428_PRECONDITION_REQUIRED,
+                    detail="לא נמצא גיבוי מתאים למשתמש. יש לבצע גיבוי מחדש לפני התנתקות.",
+                )
 
-        # Require this backup to be fresh (avoids reusing an old backup forever).
-        created_at = rec.created_at
-        if created_at.tzinfo is None:
-            created_at = created_at.replace(tzinfo=dt.timezone.utc)
-        if created_at < dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=30):
-            raise HTTPException(
-                status_code=status.HTTP_428_PRECONDITION_REQUIRED,
-                detail="הגיבוי ישן מדי. לפני התנתקות חובה לבצע גיבוי מחדש.",
-            )
+            # Require this backup to be fresh (avoids reusing an old backup forever).
+            created_at = rec.created_at
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=dt.timezone.utc)
+            if created_at < dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=30):
+                raise HTTPException(
+                    status_code=status.HTTP_428_PRECONDITION_REQUIRED,
+                    detail="הגיבוי ישן מדי. לפני התנתקות חובה לבצע גיבוי מחדש.",
+                )
         from app.services.activity_log import log_activity
         log_activity(db, action="logout", entity_type="user", entity_id=user.id, user_id=user.id)
 

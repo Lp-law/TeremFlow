@@ -217,21 +217,31 @@ def update_case_status(db: Session, *, case_id: int, status_value) -> Case:
 
 
 def get_latest_fee_stage_by_case_ids(db: Session, case_ids: list[int]) -> dict[int, str]:
-    """Return mapping case_id -> latest fee event_type (code string). One query for all cases."""
+    """
+    Return mapping case_id -> display string for current procedure stage (one query).
+    - Single-stage fee events: return event_type code (e.g. COURT_STAGE_1_DEFENSE).
+    - STAGE_BILLING: return "STAGE_BILLING:N" where N = len(breakdown_json.new_codes) for frontend to show "חיוב לפי שלבים (N)".
+    """
     if not case_ids:
         return {}
+    from app.models.enums import FeeEventType
     from app.models.fee_event import FeeEvent
 
     rows = (
-        db.query(FeeEvent.case_id, FeeEvent.event_type)
+        db.query(FeeEvent.case_id, FeeEvent.event_type, FeeEvent.breakdown_json)
         .filter(FeeEvent.case_id.in_(case_ids))
         .order_by(FeeEvent.event_date.desc(), FeeEvent.id.desc())
         .all()
     )
     result: dict[int, str] = {}
-    for case_id, event_type in rows:
+    for case_id, event_type, breakdown_json in rows:
         if case_id not in result:
-            result[case_id] = event_type.value if hasattr(event_type, "value") else str(event_type)
+            if event_type == FeeEventType.STAGE_BILLING:
+                new_codes = (breakdown_json or {}).get("new_codes") if breakdown_json else None
+                n = len(new_codes) if isinstance(new_codes, list) else 0
+                result[case_id] = f"STAGE_BILLING:{n}"
+            else:
+                result[case_id] = event_type.value if hasattr(event_type, "value") else str(event_type)
     return result
 
 

@@ -14,10 +14,11 @@ router = APIRouter()
 
 ACTION_LABELS = {
     "case_create": "יצירת תיק",
-    "excel_import": "ייבוא מאקסל",
+    "excel_import": "ייבוא מאקסל (יצירה)",
+    "excel_import_update": "ייבוא מאקסל (עדכון)",
     "data_wipe": "מחיקת נתונים",
     "expense_add": "הוספת הוצאה",
-    "fee_event_add": "הוספת שלב שכ״ט",
+    "fee_event_add": "הוספת אירוע שכ״ט",
     "retainer_payment_add": "הוספת תשלום ריטיינר",
     "backup_export": "יצירת גיבוי",
     "login": "התחברות",

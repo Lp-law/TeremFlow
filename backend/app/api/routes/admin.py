@@ -1,15 +1,18 @@
-"""Admin endpoints for destructive operations."""
+"""Admin endpoints for destructive operations and export."""
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_auth
+from app.api.routes.backups import build_backup_zip
 from app.core.config import settings
 from app.db.session import get_db
 from app.models.case import Case
 from app.models.notification import AlertEvent, Notification
+from app.models.user import User
 
 router = APIRouter()
 
@@ -57,3 +60,18 @@ def wipe_case_data_status(db: Session = Depends(get_db), _=Depends(require_auth)
         "cases": case_count,
         "clean": case_count == 0,
     }
+
+
+@router.get("/export-backup")
+def admin_export_backup(
+    user: User = Depends(require_auth),
+    db: Session = Depends(get_db),
+) -> Response:
+    """GET backup (same content as POST /backups/export). Auth required. Returns ZIP with all tables as CSV."""
+    data, filename, rec = build_backup_zip(db, user)
+    headers = {
+        "Content-Disposition": f'attachment; filename="{filename}"',
+        "X-Backup-Id": str(rec.id),
+        "X-Backup-Sha256": rec.sha256,
+    }
+    return Response(content=data, media_type="application/zip", headers=headers)

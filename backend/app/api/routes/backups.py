@@ -34,12 +34,8 @@ def _as_cell_value(v: Any) -> str:
     return str(v)
 
 
-@router.post("/export")
-def export_backup(user: User = Depends(require_auth), db: Session = Depends(get_db)) -> Response:
-    """
-    Exports a ZIP with one CSV per DB table (Excel-friendly).
-    The ZIP is NOT stored server-side; we only store a BackupRecord (who/when/hash).
-    """
+def build_backup_zip(db: Session, user: User) -> tuple[bytes, str, BackupRecord]:
+    """Build backup ZIP, create BackupRecord, log activity. Returns (data, filename, record)."""
     now = dt.datetime.now(dt.timezone.utc)
     safe_username = "".join(ch for ch in user.username if ch.isalnum() or ch in ("-", "_")) or "user"
     filename = f"teremflow-backup-{now:%Y%m%d-%H%M%S}-{safe_username}.zip"
@@ -100,10 +96,20 @@ def export_backup(user: User = Depends(require_auth), db: Session = Depends(get_
     from app.services.activity_log import log_activity
     log_activity(db, action="backup_export", entity_type="backup", entity_id=rec.id, user_id=user.id, details={"file_name": filename, "size_bytes": len(data)})
 
+    return (data, filename, rec)
+
+
+@router.post("/export")
+def export_backup(user: User = Depends(require_auth), db: Session = Depends(get_db)) -> Response:
+    """
+    Exports a ZIP with one CSV per DB table (Excel-friendly).
+    The ZIP is NOT stored server-side; we only store a BackupRecord (who/when/hash).
+    """
+    data, filename, rec = build_backup_zip(db, user)
     headers = {
         "Content-Disposition": f'attachment; filename="{filename}"',
         "X-Backup-Id": str(rec.id),
-        "X-Backup-Sha256": sha256,
+        "X-Backup-Sha256": rec.sha256,
     }
     return Response(content=data, media_type="application/zip", headers=headers)
 

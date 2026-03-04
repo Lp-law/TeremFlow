@@ -13,7 +13,7 @@ type AuthState = {
   user: User | null
   isLoading: boolean
   login: (username: string, password: string) => Promise<void>
-  logout: (opts?: { backupId?: string }) => Promise<void>
+  logout: (opts?: { backupId?: string; skipBackup?: boolean }) => Promise<void>
   refresh: () => Promise<void>
 }
 
@@ -53,10 +53,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     navigate('/dashboard', { replace: true })
   }
 
-  async function logout(opts?: { backupId?: string }) {
+  async function logout(opts?: { backupId?: string; skipBackup?: boolean }) {
+    const headers: Record<string, string> = {}
+    if (opts?.backupId) headers['X-Backup-Id'] = opts.backupId
+    if (opts?.skipBackup) headers['X-Skip-Backup'] = 'true'
     await apiFetch('/auth/logout', {
       method: 'POST',
-      headers: opts?.backupId ? { 'X-Backup-Id': opts.backupId } : undefined,
+      headers: Object.keys(headers).length ? headers : undefined,
     })
     setUser(null)
     setCsrfToken(null)

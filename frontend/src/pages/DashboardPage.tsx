@@ -27,6 +27,8 @@ export function DashboardPage() {
   const [backupError, setBackupError] = useState<string | null>(null)
   const [isBackingUp, setIsBackingUp] = useState(false)
   const [showLogoutModal, setShowLogoutModal] = useState(false)
+  const [backupDownloadedId, setBackupDownloadedId] = useState<string | null>(null)
+  const [adminSkipBackup, setAdminSkipBackup] = useState(false)
   const [activityItems, setActivityItems] = useState<ActivityItem[]>([])
 
   const fmt = useMemo(
@@ -108,10 +110,18 @@ export function DashboardPage() {
     }
   }
 
-  async function backupAndLogout() {
-    const backupId = await downloadBackup()
-    if (!backupId) throw new Error('לא התקבל מזהה גיבוי מהשרת')
-    await logout({ backupId })
+  function canLogout(): boolean {
+    return (backupDownloadedId != null) || (user?.role === 'ADMIN' && adminSkipBackup)
+  }
+
+  async function doLogout() {
+    if (user?.role === 'ADMIN' && adminSkipBackup) {
+      await logout({ skipBackup: true })
+    } else if (backupDownloadedId) {
+      await logout({ backupId: backupDownloadedId })
+    } else {
+      throw new Error('נא להוריד גיבוי לפני התנתקות')
+    }
   }
 
   return (
@@ -129,6 +139,8 @@ export function DashboardPage() {
           <button
             onClick={() => {
               setBackupError(null)
+              setBackupDownloadedId(null)
+              setAdminSkipBackup(false)
               setShowLogoutModal(true)
             }}
             className="btn btn-secondary order-3"
@@ -194,7 +206,8 @@ export function DashboardPage() {
         <div className="mt-8 card p-6">
           <div className="text-right">
             <div className="text-lg font-semibold">יומן אירועים</div>
-            <div className="text-sm text-muted mt-1">פעולות אחרונות במערכת</div>
+            <div className="text-sm text-muted mt-1">פעולות אחרונות במערכת (ייבוא, חיוב משלבים, תשלומים, הוצאות)</div>
+            <div className="text-xs text-muted mt-1">גיבויי לילה: Render מספק גיבויים אוטומטיים ל־Postgres — ניתן לראות ב־Dashboard של Render</div>
           </div>
           <div className="mt-4 space-y-2">
             {activityItems.length === 0 ? (
@@ -223,36 +236,67 @@ export function DashboardPage() {
             <div className="text-right">
               <div className="text-xl font-bold">התנתקות</div>
               <div className="text-sm text-muted mt-2">
-                לפני התנתקות חובה לבצע גיבוי ולהוריד אותו למחשב, כדי שניתן יהיה לשחזר מידע בקלות במקרה תקלה.
+                לפני התנתקות יש לבצע גיבוי. הורידו את קובץ הגיבוי למחשב, ואז לחצו התנתק.
               </div>
               {backupError ? (
                 <div className="mt-3 text-sm text-red-300">{backupError}</div>
               ) : null}
             </div>
 
-            <div className="mt-5 flex flex-col md:flex-row gap-3 md:justify-end">
-              <button
-                onClick={() => setShowLogoutModal(false)}
-                className="btn btn-secondary"
-                disabled={isBackingUp}
-              >
-                ביטול
-              </button>
-              <button
-                onClick={async () => {
-                  try {
-                    await backupAndLogout()
+            <div className="mt-5 flex flex-col gap-3">
+              <div className="flex flex-col md:flex-row gap-3 md:justify-end">
+                <button
+                  onClick={() => {
                     setShowLogoutModal(false)
-                  } catch (e: any) {
-                    setBackupError(e?.message || 'שגיאה — נא לנסות שוב')
-                    /* keep modal open so user can retry */
-                  }
-                }}
-                className="btn btn-primary"
-                disabled={isBackingUp}
-              >
-                {isBackingUp ? 'מכין גיבוי…' : 'בצע גיבוי והתנתק'}
-              </button>
+                    setBackupDownloadedId(null)
+                    setAdminSkipBackup(false)
+                    setBackupError(null)
+                  }}
+                  className="btn btn-secondary"
+                  disabled={isBackingUp}
+                >
+                  ביטול
+                </button>
+                <button
+                  onClick={async () => {
+                    setBackupError(null)
+                    try {
+                      const id = await downloadBackup()
+                      if (id) setBackupDownloadedId(id)
+                    } catch (e: any) {
+                      setBackupError(e?.message || 'שגיאה — נא לנסות שוב')
+                    }
+                  }}
+                  className="btn btn-primary"
+                  disabled={isBackingUp}
+                >
+                  {isBackingUp ? 'מכין גיבוי…' : 'הורד גיבוי עכשיו'}
+                </button>
+                <button
+                  onClick={async () => {
+                    try {
+                      await doLogout()
+                      setShowLogoutModal(false)
+                    } catch (e: any) {
+                      setBackupError(e?.message || 'שגיאה')
+                    }
+                  }}
+                  className="btn btn-primary"
+                  disabled={!canLogout() || isBackingUp}
+                >
+                  התנתק
+                </button>
+              </div>
+              {user?.role === 'ADMIN' ? (
+                <label className="flex items-center gap-2 justify-end cursor-pointer text-sm text-muted">
+                  <input
+                    type="checkbox"
+                    checked={adminSkipBackup}
+                    onChange={(e) => setAdminSkipBackup(e.target.checked)}
+                  />
+                  <span>גיביתי כבר (פטור למנהל בלבד)</span>
+                </label>
+              ) : null}
             </div>
           </div>
         </div>

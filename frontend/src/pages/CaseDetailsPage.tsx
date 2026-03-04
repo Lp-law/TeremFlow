@@ -11,7 +11,6 @@ import type {
   ExpenseOut,
   ExpensePayer,
   FeeEvent,
-  FeeEventType,
   RetainerAccrual,
   RetainerPayment,
   RetainerSummary,
@@ -59,7 +58,7 @@ export function CaseDetailsPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  type ModalKind = 'expense' | 'retainerPayment' | 'feeEvent' | 'stageBilling'
+  type ModalKind = 'expense' | 'retainerPayment' | 'stageBilling'
   const [activeModal, setActiveModal] = useState<ModalKind | null>(null)
   const [retainerReloadKey, setRetainerReloadKey] = useState(0)
   const [feesReloadKey, setFeesReloadKey] = useState(0)
@@ -186,7 +185,6 @@ export function CaseDetailsPage() {
                   caseId={caseItem.id}
                   historicalFeeStages={caseItem.historical_fee_stages ?? []}
                   legacyFeeText={caseItem.legacy_fee_text ?? null}
-                  onOpenAddFeeStage={() => setActiveModal('feeEvent')}
                   onOpenStageBilling={() => setActiveModal('stageBilling')}
                   feesReloadKey={feesReloadKey}
                 />
@@ -213,17 +211,6 @@ export function CaseDetailsPage() {
           onSaved={async () => {
             setActiveModal(null)
             setRetainerReloadKey((k) => k + 1)
-            await load()
-          }}
-        />
-      ) : null}
-      {caseItem && activeModal === 'feeEvent' ? (
-        <AddFeeEventModal
-          caseId={caseItem.id}
-          onClose={() => setActiveModal(null)}
-          onSaved={async () => {
-            setActiveModal(null)
-            setFeesReloadKey((k) => k + 1)
             await load()
           }}
         />
@@ -810,14 +797,12 @@ function FeesPanel({
   caseId,
   historicalFeeStages,
   legacyFeeText,
-  onOpenAddFeeStage,
   onOpenStageBilling,
   feesReloadKey,
 }: {
   caseId: number
   historicalFeeStages: string[]
   legacyFeeText: string | null
-  onOpenAddFeeStage: () => void
   onOpenStageBilling: () => void
   feesReloadKey: number
 }) {
@@ -913,16 +898,11 @@ function FeesPanel({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="text-right">
             <div className="font-semibold">אירועי שכ״ט</div>
-            <div className="text-sm text-muted mt-1">המערכת מקצה קרדיט ריטיינר לפי סדר כרונולוגי</div>
+            <div className="text-sm text-muted mt-1">בחרו שלבים שבוצעו — יחויבו רק שלבים חדשים (דלתא). המערכת מקצה קרדיט ריטיינר לפי סדר כרונולוגי</div>
           </div>
-          <div className="flex gap-2">
-            <button type="button" onClick={onOpenStageBilling} className="btn btn-secondary">
-              חיוב משלבי ביצוע
-            </button>
-            <button type="button" onClick={onOpenAddFeeStage} className="btn btn-primary">
-              הוספת שלב שכ״ט
-            </button>
-          </div>
+          <button type="button" onClick={onOpenStageBilling} className="btn btn-primary">
+            חיוב משלבי ביצוע
+          </button>
         </div>
 
         <div className="mt-4 overflow-x-auto">
@@ -966,137 +946,6 @@ function FeesPanel({
               ) : null}
             </tbody>
           </table>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function AddFeeEventModal({ caseId, onClose, onSaved }: { caseId: number; onClose: () => void; onSaved: () => void }) {
-  const today = new Date().toISOString().slice(0, 10)
-  const [eventType, setEventType] = useState<FeeEventType>('COURT_STAGE_1_DEFENSE')
-  const [eventDate, setEventDate] = useState(today)
-  const [quantity, setQuantity] = useState(1)
-  const [amountOverride, setAmountOverride] = useState('')
-  const [showAdvanced, setShowAdvanced] = useState(false)
-
-  const [error, setError] = useState<string | null>(null)
-  const [isSubmitting, setIsSubmitting] = useState(false)
-
-  const needsQty = eventType === 'DEMAND_HOURLY' || eventType === 'ADDITIONAL_PROOF_HEARING'
-  const needsOverride = eventType === 'SMALL_CLAIMS_MANUAL'
-
-  const isDirty =
-    eventType !== 'COURT_STAGE_1_DEFENSE' ||
-    eventDate !== today ||
-    quantity !== 1 ||
-    amountOverride.trim() !== '' ||
-    showAdvanced !== false
-
-  useUnsavedGuard(isDirty, 'יש שינויים שלא נשמרו. לצאת בלי לשמור?')
-
-  function safeClose() {
-    if (isDirty) {
-      const ok = window.confirm('יש שינויים שלא נשמרו. לצאת בלי לשמור?')
-      if (!ok) return
-    }
-    onClose()
-  }
-
-  async function submit() {
-    setError(null)
-    setIsSubmitting(true)
-    try {
-      const payload: any = {
-        event_type: eventType,
-        event_date: eventDate,
-        quantity: needsQty ? quantity : 1,
-      }
-      if (needsOverride) payload.amount_override_ils_gross = toNumber(amountOverride)
-      else if (showAdvanced && amountOverride.trim()) payload.amount_override_ils_gross = toNumber(amountOverride)
-      await apiFetch(`/cases/${caseId}/fees/`, { method: 'POST', body: JSON.stringify(payload) })
-      onSaved()
-    } catch (e: any) {
-      setError(e?.message || 'שגיאה')
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
-
-  return (
-    <div className="modal">
-      <div className="modal-overlay" />
-      <div className="modal-panel max-w-[680px]">
-        <div className="text-right">
-          <div className="text-lg font-semibold">הוספת אירוע שכ״ט</div>
-          <div className="text-sm text-muted mt-1">הסכומים בש״ח וכוללים מע״מ (ברוטו).</div>
-        </div>
-
-        <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Field label="סוג אירוע">
-            <select className="input" value={eventType} onChange={(e) => setEventType(e.target.value as FeeEventType)}>
-              {Object.entries(FEE_EVENT_LABEL).map(([k, v]) => (
-                <option key={k} value={k}>
-                  {v}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="תאריך אירוע">
-            <input className="input" type="date" value={eventDate} onChange={(e) => setEventDate(e.target.value)} />
-          </Field>
-
-          <Field label="כמות" className={needsQty ? '' : 'opacity-60'}>
-            <input
-              className="input"
-              type="number"
-              min={1}
-              value={needsQty ? quantity : 1}
-              disabled={!needsQty}
-              onChange={(e) => setQuantity(Math.max(1, Number(e.target.value)))}
-            />
-          </Field>
-
-          <Field label='סכום ידני (כולל מע״מ)' className={!needsOverride && !showAdvanced ? 'hidden' : ''}>
-            <input
-              className="input"
-              value={amountOverride}
-              onChange={(e) => setAmountOverride(e.target.value)}
-              inputMode="decimal"
-              placeholder={needsOverride ? 'נדרש עבור תביעות קטנות' : 'אופציונלי'}
-            />
-          </Field>
-        </div>
-
-        {!needsOverride ? (
-          <div className="mt-4 text-right">
-            <button
-              type="button"
-              onClick={() => setShowAdvanced((s) => !s)}
-              className="text-sm text-primary hover:underline"
-            >
-              {showAdvanced ? 'הסתר אפשרויות מתקדמות' : 'אפשרויות מתקדמות (אופציונלי)'}
-            </button>
-          </div>
-        ) : null}
-
-        {error ? <div className="mt-4 text-sm text-red-300 text-right">{error}</div> : null}
-
-        <div className="mt-6 flex gap-3 justify-end">
-          <button
-            onClick={safeClose}
-            className="btn btn-secondary h-12 px-5 rounded-2xl"
-            disabled={isSubmitting}
-          >
-            ביטול
-          </button>
-          <button
-            onClick={submit}
-            disabled={isSubmitting || (needsOverride && !amountOverride.trim())}
-            className="btn btn-primary h-12 px-6 rounded-2xl"
-          >
-            שמירה
-          </button>
         </div>
       </div>
     </div>

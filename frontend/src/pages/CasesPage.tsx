@@ -29,6 +29,15 @@ const CASE_TYPE_LABEL: Record<string, string> = {
   SMALL_CLAIMS: 'תביעות קטנות',
 }
 
+function formatProcedureStage(stage: string | null | undefined): string {
+  if (!stage) return 'לא הוגדר'
+  if (stage.startsWith('STAGE_BILLING:')) {
+    const n = stage.slice('STAGE_BILLING:'.length)
+    return `חיוב לפי שלבים (${n})`
+  }
+  return PROCEDURE_STAGE_LABEL[stage] ?? stage
+}
+
 const CASE_TYPES: CaseType[] = ['COURT', 'DEMAND_LETTER', 'SMALL_CLAIMS']
 
 type CreateCaseForm = {
@@ -222,9 +231,7 @@ export function CasesPage() {
                         </Link>
                       </td>
                       <td className="py-3">
-                        {c.current_procedure_stage
-                          ? (PROCEDURE_STAGE_LABEL[c.current_procedure_stage] ?? c.current_procedure_stage)
-                          : 'לא הוגדר'}
+                        {formatProcedureStage(c.current_procedure_stage)}
                       </td>
                       <td className="py-3">
                         {c.status === 'OPEN' ? 'פתוח' : c.status === 'CLOSED' ? 'סגור' : 'לא הוגדר'}
