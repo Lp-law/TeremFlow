@@ -29,8 +29,17 @@ const CASE_TYPE_LABEL: Record<string, string> = {
   SMALL_CLAIMS: 'תביעות קטנות',
 }
 
+/** Match stage like "COURT_STAGE_3_EVIDENCE(+2)" -> code + count suffix */
+const STAGE_WITH_PLUS_RE = /^(.+)\(\+(\d+)\)$/
+
 function formatProcedureStage(stage: string | null | undefined): string {
   if (!stage) return 'לא הוגדר'
+  const plusMatch = stage.match(STAGE_WITH_PLUS_RE)
+  if (plusMatch) {
+    const [, code, k] = plusMatch
+    const label = PROCEDURE_STAGE_LABEL[code ?? ''] ?? (code ?? '')
+    return k === '0' ? label : `${label} (+${k})`
+  }
   if (stage.startsWith('STAGE_BILLING:')) {
     const n = stage.slice('STAGE_BILLING:'.length)
     return `חיוב לפי שלבים (${n})`

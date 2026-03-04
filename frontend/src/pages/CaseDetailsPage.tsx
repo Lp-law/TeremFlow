@@ -4,6 +4,11 @@ import { BackButton } from '../components/BackButton'
 import { apiFetch } from '../lib/api'
 import { Badge } from '../components/Badge'
 import { formatILS, formatDateYMD, isOverdue, toNumber } from '../lib/format'
+import {
+  RAW_GROUP_ORDER,
+  formatRawValue,
+  groupRawEntries,
+} from '../lib/rawImportFields'
 import { useUnsavedGuard } from '../lib/useUnsavedGuard'
 import type {
   CaseOut,
@@ -11,9 +16,7 @@ import type {
   ExpenseOut,
   ExpensePayer,
   FeeEvent,
-  RetainerAccrual,
-  RetainerPayment,
-  RetainerSummary,
+  RetainerLedger,
 } from '../lib/types'
 
 const CATEGORY_LABEL: Record<ExpenseCategory, string> = {
@@ -174,8 +177,6 @@ export function CaseDetailsPage() {
               {tab === 'retainer' ? (
                 <RetainerPanel
                   caseId={caseItem.id}
-                  retainerAnchorDate={caseItem.retainer_anchor_date}
-                  retainerSnapshotIlsGross={caseItem.retainer_snapshot_ils_gross}
                   onOpenAddPayment={() => setActiveModal('retainerPayment')}
                   retainerReloadKey={retainerReloadKey}
                 />
@@ -268,35 +269,139 @@ function OverviewTab({ caseItem, currentLegalStage }: { caseItem: CaseOut; curre
       </section>
 
       {caseItem.raw_import_fields_json && Object.keys(caseItem.raw_import_fields_json).length > 0 ? (
-        <section>
-          <h3 className="text-sm font-semibold text-muted mb-3">נתוני ייבוא גולמיים (לקריאה בלבד)</h3>
-          <div className="overflow-x-auto rounded-xl border border-border/60 bg-surface/30">
-            <table className="w-full text-sm">
-              <thead className="text-muted">
-                <tr className="border-b border-border/60">
-                  <th className="text-right py-3 px-4">שדה</th>
-                  <th className="text-right py-3 px-4">ערך</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Object.entries(caseItem.raw_import_fields_json).map(([key, val]) => (
-                  <tr key={key} className="border-b border-border/30">
-                    <td className="py-2 px-4 font-medium">{key}</td>
-                    <td className="py-2 px-4 text-muted">
-                      {val === null || val === undefined
-                        ? '—'
-                        : typeof val === 'object'
-                          ? JSON.stringify(val)
-                          : String(val)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
+        <RawImportSection raw={caseItem.raw_import_fields_json} />
       ) : null}
     </div>
+  )
+}
+
+function RawImportSection({ raw }: { raw: Record<string, unknown> }) {
+  const [filterEmpty, setFilterEmpty] = useState(true)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(() => {
+    const o: Record<string, boolean> = {}
+    RAW_GROUP_ORDER.forEach((g) => { o[g] = true })
+    return o
+  })
+
+  const entries = useMemo(() => Object.entries(raw), [raw])
+  const byGroup = useMemo(
+    () => groupRawEntries(entries, filterEmpty, searchQuery),
+    [entries, filterEmpty, searchQuery]
+  )
+
+  function setAllExpanded(expanded: boolean) {
+    setExpandedGroups((prev) => {
+      const next = { ...prev }
+      RAW_GROUP_ORDER.forEach((g) => { next[g] = expanded })
+      return next
+    })
+  }
+
+  function toggleGroup(group: string) {
+    setExpandedGroups((prev) => ({ ...prev, [group]: !prev[group] }))
+  }
+
+  async function copyValue(display: string) {
+    try {
+      await navigator.clipboard.writeText(display)
+    } catch {
+      // ignore
+    }
+  }
+
+  const hasAny = RAW_GROUP_ORDER.some((g) => byGroup[g]?.length > 0)
+
+  return (
+    <section className="space-y-4">
+      <h3 className="text-sm font-semibold text-muted mb-3">נתוני ייבוא גולמיים (לקריאה בלבד)</h3>
+
+      <div className="flex flex-col sm:flex-row gap-3 flex-wrap items-start sm:items-center">
+        <label className="flex items-center gap-2 cursor-pointer text-sm text-muted">
+          <input
+            type="checkbox"
+            checked={filterEmpty}
+            onChange={(e) => setFilterEmpty(e.target.checked)}
+          />
+          <span>הצג רק שדות עם ערך</span>
+        </label>
+        <input
+          type="text"
+          placeholder="חיפוש לפי שדה או תווית..."
+          className="max-w-[220px] h-9 rounded-lg border border-border/70 bg-surface px-3 text-sm text-text placeholder:text-placeholder outline-none focus:ring-2 focus:ring-primary/50"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
+        <div className="flex gap-2 text-sm">
+          <button
+            type="button"
+            onClick={() => setAllExpanded(true)}
+            className="text-primary hover:underline"
+          >
+            הצג הכל
+          </button>
+          <span className="text-muted">|</span>
+          <button
+            type="button"
+            onClick={() => setAllExpanded(false)}
+            className="text-primary hover:underline"
+          >
+            הסתר הכל
+          </button>
+        </div>
+      </div>
+
+      {!hasAny ? (
+        <div className="text-sm text-muted py-4">אין שדות להצגה (נסה לבטל סינון או לשנות חיפוש)</div>
+      ) : (
+        <div className="space-y-2">
+          {RAW_GROUP_ORDER.map((group) => {
+            const rows = byGroup[group] ?? []
+            if (rows.length === 0) return null
+            const isExpanded = expandedGroups[group] !== false
+            return (
+              <div key={group} className="rounded-xl border border-border/60 bg-surface/30 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(group)}
+                  className="w-full text-right flex items-center justify-between gap-2 py-3 px-4 text-sm font-semibold text-muted hover:bg-surface/50 transition-colors"
+                >
+                  <span>{group}</span>
+                  <span className="text-lg leading-none">{isExpanded ? '▼' : '◀'}</span>
+                </button>
+                {isExpanded ? (
+                  <div className="border-t border-border/40">
+                    {rows.map(({ key, label, value }) => {
+                      const display = formatRawValue(key, value)
+                      return (
+                        <div
+                          key={key}
+                          className="flex items-center justify-between gap-4 py-2 px-4 border-b border-border/30 last:border-0 text-sm"
+                        >
+                          <div className="min-w-0 flex-1 text-right">
+                            <span className="font-medium">{label}</span>
+                            <span className="text-muted mr-2">:</span>
+                            <span className="text-muted">{display}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => copyValue(display)}
+                            className="shrink-0 text-xs text-primary hover:underline py-1 px-2"
+                            title="העתק"
+                          >
+                            העתק
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                ) : null}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </section>
   )
 }
 
@@ -525,38 +630,23 @@ function Field({
 
 function RetainerPanel({
   caseId,
-  retainerAnchorDate,
-  retainerSnapshotIlsGross,
   onOpenAddPayment,
   retainerReloadKey,
 }: {
   caseId: number
-  retainerAnchorDate: string
-  retainerSnapshotIlsGross: string | number | null
   onOpenAddPayment: () => void
   retainerReloadKey: number
 }) {
-  const [summary, setSummary] = useState<RetainerSummary | null>(null)
-  const [accruals, setAccruals] = useState<RetainerAccrual[]>([])
-  const [payments, setPayments] = useState<RetainerPayment[]>([])
+  const [ledger, setLedger] = useState<RetainerLedger | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-
-  const hasHistoricalSnapshot =
-    retainerSnapshotIlsGross != null && Number(retainerSnapshotIlsGross) > 0
 
   async function load() {
     setError(null)
     setIsLoading(true)
     try {
-      const [s, a, p] = await Promise.all([
-        apiFetch<RetainerSummary>(`/cases/${caseId}/retainer/summary`),
-        apiFetch<RetainerAccrual[]>(`/cases/${caseId}/retainer/accruals`),
-        apiFetch<RetainerPayment[]>(`/cases/${caseId}/retainer/payments`),
-      ])
-      setSummary(s)
-      setAccruals(a)
-      setPayments(p)
+      const data = await apiFetch<RetainerLedger>(`/cases/${caseId}/retainer/ledger`)
+      setLedger(data)
     } catch (e: any) {
       setError(e?.message || 'שגיאה')
     } finally {
@@ -571,134 +661,91 @@ function RetainerPanel({
 
   if (isLoading) return <div className="text-right text-sm text-muted">טוען ריטיינר...</div>
   if (error) return <div className="text-right text-sm text-red-300">{error}</div>
+  if (!ledger) return null
 
-  const retainerStartMonth = retainerAnchorDate ? String(retainerAnchorDate).slice(0, 7) : null
+  const cfg = ledger.config
+  const monthlyDisplay = `${formatILS(cfg.monthly_base_net_ils)} + מע״מ ${cfg.vat_pct} = ${formatILS(cfg.monthly_gross_ils)}`
 
   return (
     <div className="space-y-6">
-      {hasHistoricalSnapshot ? (
-        <div className="card-soft p-5">
-          <div className="text-right mb-4">
-            <div className="font-semibold">ריטיינר עבר (ייבוא)</div>
-            <div className="text-sm text-muted mt-1">סכום היסטורי — לקריאה בלבד, אינו משפיע על אקרואלים או תשלומים</div>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-muted">
-                <tr className="border-b border-border/60">
-                  <th className="text-right py-3">תאריך</th>
-                  <th className="text-right py-3">תיאור</th>
-                  <th className="text-right py-3">סכום</th>
-                  <th className="text-right py-3">מקור</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr className="border-b border-border/30 bg-muted/20">
-                  <td className="py-3">—</td>
-                  <td className="py-3">ריטיינר עבר (ייבוא)</td>
-                  <td className="py-3">{formatILS(retainerSnapshotIlsGross)}</td>
-                  <td className="py-3">
-                    <Badge label="עבר" variant="info" />
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+      {/* Header summary cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+        <div className="card-soft p-4">
+          <div className="text-xs text-muted mb-1">סכום ריטיינר חודשי</div>
+          <div className="font-semibold">{monthlyDisplay}</div>
+        </div>
+        <div className="card-soft p-4">
+          <div className="text-xs text-muted mb-1">עוגן חישוב</div>
+          <div className="font-semibold">{ledger.anchor_date}</div>
+        </div>
+        <div className="card-soft p-4">
+          <div className="text-xs text-muted mb-1">Snapshot עד חודש</div>
+          <div className="font-semibold">
+            {ledger.snapshot_through_month ? String(ledger.snapshot_through_month).slice(0, 7) : 'לא הוגדר'}
           </div>
         </div>
-      ) : null}
-
-      {hasHistoricalSnapshot ? (
-        <h3 className="text-sm font-semibold text-muted">ריטיינר עתידי — אקרואלים ותשלומים</h3>
-      ) : null}
-
-      {summary ? (
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-          <MiniStat title="נצבר" value={formatILS(summary.retainer_accrued_total_ils_gross)} />
-          <MiniStat title="שולם" value={formatILS(summary.retainer_paid_total_ils_gross)} />
-          <MiniStat title="כוסה לשכ״ט" value={formatILS(summary.retainer_applied_to_fees_total_ils_gross)} />
-          <MiniStat title="יתרת קרדיט" value={formatILS(summary.retainer_credit_balance_ils_gross)} />
-          <MiniStat title="שכ״ט לתשלום" value={formatILS(summary.fees_due_total_ils_gross)} />
+        <div className="card-soft p-4">
+          <div className="text-xs text-muted mb-1">Snapshot שולם</div>
+          <div className="font-semibold">{formatILS(ledger.snapshot_paid_ils)}</div>
         </div>
-      ) : null}
+        <div className="card-soft p-4">
+          <div className="text-xs text-muted mb-1">קרדיט ריטיינר נוכחי</div>
+          <div className="font-semibold">{formatILS(ledger.current_credit_ils)}</div>
+        </div>
+      </div>
 
+      {/* Explanation block */}
+      <div className="card-soft p-4 bg-muted/20">
+        <p className="text-sm text-right text-muted leading-relaxed">
+          <strong>הסבר:</strong> ה־Snapshot מייצג סכום ריטיינר ששולם עבור תקופה שקדמה למערכת. מהחודש שאחרי &quot;Snapshot עד חודש&quot; מחושבים אקרואלים חודשיים. לשונית זו מציגה רק את ריטיינר השכר החודשי — לא הוצאות.
+        </p>
+      </div>
+
+      {/* Monthly ledger table */}
       <div className="card-soft p-5">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="text-right">
-            <div className="font-semibold">אקרואלים</div>
-            <div className="text-sm text-muted mt-1">נטו 60 (תאריך חשבונית = 1 בחודש האקרואל)</div>
+            <div className="font-semibold">פנקס ריטיינר חודשי</div>
+            <div className="text-sm text-muted mt-1">נצבר, שולם ויתרת קרדיט לפי חודש</div>
           </div>
+          <button onClick={onOpenAddPayment} className="btn btn-primary">
+            הוסף תשלום ריטיינר
+          </button>
         </div>
         <div className="mt-4 overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="text-muted">
               <tr className="border-b border-border/60">
                 <th className="text-right py-3">חודש</th>
-                <th className="text-right py-3">תאריך חשבונית</th>
-                <th className="text-right py-3">תאריך יעד</th>
-                <th className="text-right py-3">סכום</th>
-                <th className="text-right py-3">סטטוס</th>
+                <th className="text-right py-3">נצבר (ש״ח)</th>
+                <th className="text-right py-3">שולם (ש״ח)</th>
+                <th className="text-right py-3">יתרת קרדיט (ש״ח)</th>
+                <th className="text-right py-3">הערות</th>
               </tr>
             </thead>
             <tbody>
-              {accruals.map((a) => {
-                const overdue = isOverdue(formatDateYMD(a.due_date), a.is_paid)
+              {ledger.rows.map((row, idx) => {
+                const isSnapshot = row.row_type === 'snapshot'
+                const isPayment = row.row_type === 'payment'
+                const monthLabel = isPayment ? `${row.month} · תשלום` : row.month
+                const notesDisplay = row.notes ?? '—'
                 return (
-                  <tr key={a.id} className={`border-b border-border/30 ${overdue ? 'bg-red-500/10' : 'hover:bg-surface/30'}`}>
-                    <td className="py-3">{formatDateYMD(a.accrual_month).slice(0, 7)}</td>
-                    <td className="py-3">{formatDateYMD(a.invoice_date)}</td>
-                    <td className="py-3">{formatDateYMD(a.due_date)}</td>
-                    <td className="py-3">{formatILS(a.amount_ils_gross)}</td>
-                    <td className="py-3">
-                      {a.is_paid ? <Badge label="שולם" variant="success" /> : overdue ? <Badge label="באיחור" variant="danger" /> : <Badge label="טרם שולם" variant="warning" />}
-                    </td>
+                  <tr
+                    key={`${row.row_type}-${row.month}-${idx}`}
+                    className={`border-b border-border/30 ${isSnapshot ? 'bg-muted/20' : ''} ${isPayment ? 'bg-surface/20' : ''} hover:bg-surface/30`}
+                  >
+                    <td className={`py-3 ${isPayment ? 'pr-6 text-muted' : ''}`}>{monthLabel}</td>
+                    <td className="py-3">{formatILS(row.accrued_ils)}</td>
+                    <td className="py-3">{formatILS(row.paid_ils)}</td>
+                    <td className="py-3">{formatILS(row.running_credit_ils)}</td>
+                    <td className="py-3 text-muted">{notesDisplay}</td>
                   </tr>
                 )
               })}
-              {accruals.length === 0 ? (
+              {ledger.rows.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="py-8 text-center text-muted">
-                    אין אקרואלים{retainerStartMonth ? ` — הצטברות מתחילה בחודש ${retainerStartMonth}` : ''}
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div className="card-soft p-5">
-        <div className="flex items-center justify-between gap-3">
-          <div className="text-right">
-            <div className="font-semibold">תשלומים</div>
-            <div className="text-sm text-muted mt-1">תשלומים מגדילים קרדיט (cash basis)</div>
-          </div>
-          <button
-            onClick={onOpenAddPayment}
-            className="btn btn-primary"
-          >
-            הוספת תשלום ריטיינר
-          </button>
-        </div>
-
-        <div className="mt-4 overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="text-muted">
-              <tr className="border-b border-border/60">
-                <th className="text-right py-3">תאריך תשלום</th>
-                <th className="text-right py-3">סכום</th>
-              </tr>
-            </thead>
-            <tbody>
-              {payments.map((p) => (
-                <tr key={p.id} className="border-b border-border/30 hover:bg-surface/30">
-                  <td className="py-3">{formatDateYMD(p.payment_date)}</td>
-                  <td className="py-3">{formatILS(p.amount_ils_gross)}</td>
-                </tr>
-              ))}
-              {payments.length === 0 ? (
-                <tr>
-                  <td colSpan={2} className="py-8 text-center text-muted">
-                    אין תשלומים
+                    אין שורות בפנקס
                   </td>
                 </tr>
               ) : null}
@@ -714,10 +761,11 @@ function AddRetainerPaymentModal({ caseId, onClose, onSaved }: { caseId: number;
   const today = new Date().toISOString().slice(0, 10)
   const [paymentDate, setPaymentDate] = useState(today)
   const [amount, setAmount] = useState('945.00')
+  const [note, setNote] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const isDirty = paymentDate !== today || amount.trim() !== '945.00'
+  const isDirty = paymentDate !== today || amount.trim() !== '945.00' || note.trim() !== ''
   useUnsavedGuard(isDirty, 'יש שינויים שלא נשמרו. לצאת בלי לשמור?')
 
   function safeClose() {
@@ -734,7 +782,11 @@ function AddRetainerPaymentModal({ caseId, onClose, onSaved }: { caseId: number;
     try {
       await apiFetch(`/cases/${caseId}/retainer/payments`, {
         method: 'POST',
-        body: JSON.stringify({ payment_date: paymentDate, amount_ils_gross: toNumber(amount) }),
+        body: JSON.stringify({
+          payment_date: paymentDate,
+          amount_ils_gross: toNumber(amount),
+          note: note.trim() || undefined,
+        }),
       })
       onSaved()
     } catch (e: any) {
@@ -759,6 +811,11 @@ function AddRetainerPaymentModal({ caseId, onClose, onSaved }: { caseId: number;
           </Field>
           <Field label='סכום (כולל מע"מ)'>
             <input className="input" value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" />
+          </Field>
+        </div>
+        <div className="mt-4">
+          <Field label="הערה (אופציונלי)">
+            <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="הערה פנימית" />
           </Field>
         </div>
 

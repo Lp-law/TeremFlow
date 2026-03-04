@@ -220,7 +220,8 @@ def get_latest_fee_stage_by_case_ids(db: Session, case_ids: list[int]) -> dict[i
     """
     Return mapping case_id -> display string for current procedure stage (one query).
     - Single-stage fee events: return event_type code (e.g. COURT_STAGE_1_DEFENSE).
-    - STAGE_BILLING: return "STAGE_BILLING:N" where N = len(breakdown_json.new_codes) for frontend to show "חיוב לפי שלבים (N)".
+    - STAGE_BILLING with new_codes: return last code, optionally "{last_code}(+K)" where K = len(new_codes)-1.
+    - STAGE_BILLING with no new_codes: return "STAGE_BILLING:0" for frontend fallback.
     """
     if not case_ids:
         return {}
@@ -238,8 +239,16 @@ def get_latest_fee_stage_by_case_ids(db: Session, case_ids: list[int]) -> dict[i
         if case_id not in result:
             if event_type == FeeEventType.STAGE_BILLING:
                 new_codes = (breakdown_json or {}).get("new_codes") if breakdown_json else None
-                n = len(new_codes) if isinstance(new_codes, list) else 0
-                result[case_id] = f"STAGE_BILLING:{n}"
+                if isinstance(new_codes, list) and len(new_codes) > 0:
+                    last_code = new_codes[-1]
+                    if not isinstance(last_code, str):
+                        last_code = str(last_code)
+                    if len(new_codes) > 1:
+                        result[case_id] = f"{last_code}(+{len(new_codes) - 1})"
+                    else:
+                        result[case_id] = last_code
+                else:
+                    result[case_id] = "STAGE_BILLING:0"
             else:
                 result[case_id] = event_type.value if hasattr(event_type, "value") else str(event_type)
     return result

@@ -14,10 +14,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_auth
+from app.core.config import settings
 from app.db.session import Base, get_db
 from app.models.backup import BackupRecord
 from app.models.user import User
-from app.schemas.backup import BackupLastOut
+from app.schemas.backup import BackupLastOut, MyLastBackupOut
 
 # Ensure all models are imported so Base.metadata includes all tables.
 import app.models  # noqa: F401
@@ -116,9 +117,9 @@ def export_backup(user: User = Depends(require_auth), db: Session = Depends(get_
 
 @router.get("/last", response_model=BackupLastOut)
 def last_backup(db: Session = Depends(get_db), user: User = Depends(require_auth)) -> BackupLastOut:
+    """Last backup in the system (any user); for dashboard display."""
     rec = db.query(BackupRecord).order_by(BackupRecord.id.desc()).first()
     if not rec:
-        # Keep API simple for UI (no 404 handling). "id=0" means none.
         return BackupLastOut(
             id=0,
             created_at=dt.datetime.fromtimestamp(0, tz=dt.timezone.utc),
@@ -133,6 +134,28 @@ def last_backup(db: Session = Depends(get_db), user: User = Depends(require_auth
         created_by_username=created_by.username if created_by else "",
         file_name=rec.file_name,
         size_bytes=rec.size_bytes,
+    )
+
+
+@router.get("/my-last", response_model=MyLastBackupOut)
+def my_last_backup(db: Session = Depends(get_db), user: User = Depends(require_auth)) -> MyLastBackupOut:
+    """Last backup by current user; used for logout policy (if within backup_fresh_hours, logout without re-download)."""
+    rec = (
+        db.query(BackupRecord)
+        .filter(BackupRecord.created_by_user_id == user.id)
+        .order_by(BackupRecord.id.desc())
+        .first()
+    )
+    fresh_hours = getattr(settings, "backup_fresh_hours", 24)
+    if not rec:
+        return MyLastBackupOut(last_backup_at=None, last_backup_id=None, fresh_hours=fresh_hours)
+    created_at = rec.created_at
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=dt.timezone.utc)
+    return MyLastBackupOut(
+        last_backup_at=created_at.isoformat(),
+        last_backup_id=rec.id,
+        fresh_hours=fresh_hours,
     )
 
 

@@ -13,3 +13,10 @@ class BackupLastOut(BaseModel):
     size_bytes: int
 
 
+class MyLastBackupOut(BaseModel):
+    """Last backup by current user; for logout policy (allow logout if within backup_fresh_hours)."""
+    last_backup_at: str | None  # ISO datetime
+    last_backup_id: int | None
+    fresh_hours: int = 24  # from settings.backup_fresh_hours; frontend uses this for "recent" check
+
+

@@ -8,6 +8,7 @@ from app.db.session import get_db
 from app.models.retainer import RetainerAccrual, RetainerPayment
 from app.schemas.retainer import (
     RetainerAccrualOut,
+    RetainerLedgerOut,
     RetainerPaymentCreate,
     RetainerPaymentOut,
     RetainerSummary,
@@ -29,7 +30,12 @@ def _accrual_out(a: RetainerAccrual) -> RetainerAccrualOut:
 
 
 def _payment_out(p: RetainerPayment) -> RetainerPaymentOut:
-    return RetainerPaymentOut(id=p.id, payment_date=p.payment_date, amount_ils_gross=p.amount_ils_gross)
+    return RetainerPaymentOut(
+        id=p.id,
+        payment_date=p.payment_date,
+        amount_ils_gross=p.amount_ils_gross,
+        note=p.note,
+    )
 
 
 @router.get("/accruals", response_model=list[RetainerAccrualOut])
@@ -58,7 +64,12 @@ def list_payments(case_id: int, db: Session = Depends(get_db), _=Depends(require
 def add_payment(
     case_id: int, payload: RetainerPaymentCreate, db: Session = Depends(get_db), user=Depends(require_auth)
 ):
-    p = RetainerPayment(case_id=case_id, payment_date=payload.payment_date, amount_ils_gross=payload.amount_ils_gross)
+    p = RetainerPayment(
+        case_id=case_id,
+        payment_date=payload.payment_date,
+        amount_ils_gross=payload.amount_ils_gross,
+        note=payload.note,
+    )
     db.add(p)
     db.commit()
     db.refresh(p)
@@ -82,5 +93,14 @@ def add_payment(
 def summary(case_id: int, db: Session = Depends(get_db), _=Depends(require_auth)):
     s = retainer_service.retainer_summary(db, case_id=case_id)
     return RetainerSummary(**s)
+
+
+@router.get("/ledger", response_model=RetainerLedgerOut)
+def ledger(case_id: int, db: Session = Depends(get_db), _=Depends(require_auth)):
+    data = retainer_service.build_retainer_ledger(db, case_id=case_id)
+    if data is None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Case not found")
+    return RetainerLedgerOut(**data)
 
 

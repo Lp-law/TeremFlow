@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     # Admin wipe: X-Wipe-Token must match to allow POST /admin/wipe-case-data.
     wipe_case_data_secret: str = Field(default="dev-wipe-change-me")
 
+    # Logout: backup is considered "fresh" for this many hours; user can logout without re-downloading.
+    backup_fresh_hours: int = Field(default=24, ge=0, description="Hours within which a backup allows logout without re-download")
+
     # Alerts
     deductible_near_pct: float = Field(default=0.10)
     deductible_near_abs_ils: int = Field(default=20000)

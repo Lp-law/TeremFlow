@@ -213,3 +213,108 @@ def retainer_summary(db: Session, *, case_id: int) -> dict[str, Decimal]:
     }
 
 
+def build_retainer_ledger(db: Session, *, case_id: int) -> dict:
+    """
+    Build month-by-month ledger for display. Ensures accruals exist up to today.
+    Returns dict suitable for RetainerLedgerOut: config, anchor_date, snapshot_*, current_credit_ils, rows.
+    No business logic changes; uses existing accruals and allocation.
+    """
+    case = db.query(Case).filter(Case.id == case_id).first()
+    if not case:
+        return None
+    today = dt.date.today()
+    anchor = case.retainer_anchor_date
+    snapshot_through = case.retainer_snapshot_through_month if case.retainer_snapshot_ils_gross else None
+    snapshot_paid = q_ils(Decimal(str(case.retainer_snapshot_ils_gross or 0)))
+    ensure_accruals_up_to(
+        db,
+        case_id=case_id,
+        retainer_anchor_date=anchor,
+        up_to=today,
+        snapshot_through_month=snapshot_through,
+    )
+    summary = retainer_summary(db, case_id=case_id)
+    current_credit = summary["retainer_credit_balance_ils_gross"]
+    rate = vat_rate_for_month(today)
+    vat_pct = "18%" if rate >= Decimal("0.18") else "17%"
+    config = {
+        "monthly_base_net_ils": RETAINER_BASE_NET_ILS,
+        "vat_pct": vat_pct,
+        "monthly_gross_ils": retainer_gross_for_month(today),
+    }
+    rows: list[dict] = []
+    running = Decimal("0.00")
+    # Build rows: snapshot (if any), then accruals and payments interleaved by date.
+    # Snapshot row
+    if snapshot_paid > 0 and snapshot_through is not None:
+        running = snapshot_paid
+        rows.append({
+            "month": snapshot_through.strftime("%Y-%m"),
+            "accrued_ils": Decimal("0"),
+            "paid_ils": snapshot_paid,
+            "running_credit_ils": running,
+            "row_type": "snapshot",
+            "notes": "from snapshot",
+        })
+    accruals = (
+        db.query(RetainerAccrual)
+        .filter(RetainerAccrual.case_id == case_id)
+        .order_by(RetainerAccrual.accrual_month.asc())
+        .all()
+    )
+    payments = (
+        db.query(RetainerPayment)
+        .filter(RetainerPayment.case_id == case_id)
+        .order_by(RetainerPayment.payment_date.asc(), RetainerPayment.id.asc())
+        .all()
+    )
+
+    # Sort key: (date, type) so snapshot=0, accrual=1, payment=2. Accrual rows: no notes.
+    def row_sort_key(item):
+        d, row_type, _ = item
+        order = 0 if row_type == "snapshot" else (1 if row_type == "accrual" else 2)
+        return (d, order)
+
+    merged: list[tuple[dt.date, str, dict]] = []
+    for a in accruals:
+        amt = q_ils(Decimal(str(a.amount_ils_gross)))
+        paid = amt if a.is_paid else Decimal("0")
+        merged.append((a.accrual_month, "accrual", {
+            "month": a.accrual_month.strftime("%Y-%m"),
+            "accrued_ils": amt,
+            "paid_ils": paid,
+            "row_type": "accrual",
+            "notes": None,
+        }))
+    for p in payments:
+        amt = q_ils(Decimal(str(p.amount_ils_gross)))
+        note_val = (p.note or "").strip() or None
+        merged.append((p.payment_date, "payment", {
+            "month": p.payment_date.strftime("%Y-%m"),
+            "accrued_ils": Decimal("0"),
+            "paid_ils": amt,
+            "row_type": "payment",
+            "notes": note_val,
+        }))
+
+    merged.sort(key=row_sort_key)
+
+    for _d, _t, row_dict in merged:
+        r_type = row_dict["row_type"]
+        if r_type == "accrual":
+            running = q_ils(running + row_dict["paid_ils"] - row_dict["accrued_ils"])
+        else:
+            running = q_ils(running + row_dict["paid_ils"])
+        row_dict["running_credit_ils"] = running
+        rows.append(row_dict)
+
+    return {
+        "config": config,
+        "anchor_date": anchor.isoformat(),
+        "snapshot_through_month": snapshot_through.isoformat() if snapshot_through else None,
+        "snapshot_paid_ils": snapshot_paid,
+        "current_credit_ils": current_credit,
+        "rows": rows,
+    }
+
+

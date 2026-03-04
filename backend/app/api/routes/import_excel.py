@@ -8,10 +8,42 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_auth
 from app.db.session import get_db
 
-from app.services.import_excel import import_cases_from_excel, import_cases_from_excel_update
+from app.services.import_excel import (
+    import_cases_from_excel,
+    import_cases_from_excel_update,
+    preview_import_excel,
+    preview_import_excel_update,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+@router.post("/excel/preview")
+def import_excel_preview(file: UploadFile = File(...), _=Depends(require_auth)):
+    """Preview create import: no DB writes. Returns headers, sample rows, warnings."""
+    try:
+        data = file.file.read()
+        return preview_import_excel(data)
+    except Exception as e:
+        logger.exception("Import Excel preview failed: %s", e)
+        raise
+
+
+@router.post("/excel-update/preview")
+def import_excel_update_preview(
+    file: UploadFile = File(...),
+    overwrite_blanks: bool = Query(False, description="If true, empty cells clear existing values"),
+    db: Session = Depends(get_db),
+    _=Depends(require_auth),
+):
+    """Preview update import: read-only. Returns headers, sample rows, case_found and will_update_fields per row, warnings."""
+    try:
+        data = file.file.read()
+        return preview_import_excel_update(data, overwrite_blanks=overwrite_blanks, db=db)
+    except Exception as e:
+        logger.exception("Import Excel update preview failed: %s", e)
+        raise
 
 
 @router.post("/excel")

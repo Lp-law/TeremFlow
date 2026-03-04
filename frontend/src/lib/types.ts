@@ -89,6 +89,30 @@ export type RetainerSummary = {
   fees_due_total_ils_gross: string | number
 }
 
+export type RetainerLedgerConfig = {
+  monthly_base_net_ils: string | number
+  vat_pct: string
+  monthly_gross_ils: string | number
+}
+
+export type RetainerLedgerRow = {
+  month: string
+  accrued_ils: string | number
+  paid_ils: string | number
+  running_credit_ils: string | number
+  row_type: 'snapshot' | 'accrual' | 'payment'
+  notes: string | null
+}
+
+export type RetainerLedger = {
+  config: RetainerLedgerConfig
+  anchor_date: string
+  snapshot_through_month: string | null
+  snapshot_paid_ils: string | number
+  current_credit_ils: string | number
+  rows: RetainerLedgerRow[]
+}
+
 export type FeeEvent = {
   id: number
   event_type: FeeEventType

@@ -11,6 +11,13 @@ type BackupLastOut = {
   size_bytes: number
 }
 
+type MyLastBackupOut = {
+  last_backup_at: string | null
+  last_backup_id: number | null
+  /** Backend-configured hours; fallback to 24 if missing (backward compat). */
+  fresh_hours?: number
+}
+
 type ActivityItem = {
   id: number
   created_at: string
@@ -29,6 +36,7 @@ export function DashboardPage() {
   const [showLogoutModal, setShowLogoutModal] = useState(false)
   const [backupDownloadedId, setBackupDownloadedId] = useState<string | null>(null)
   const [adminSkipBackup, setAdminSkipBackup] = useState(false)
+  const [myLastBackup, setMyLastBackup] = useState<MyLastBackupOut | null>(null)
   const [activityItems, setActivityItems] = useState<ActivityItem[]>([])
 
   const fmt = useMemo(
@@ -64,6 +72,33 @@ export function DashboardPage() {
     refreshActivity()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  function isBackupRecent(isoAt: string | null, freshHours: number = 24): boolean {
+    if (!isoAt) return false
+    const hours = typeof freshHours === 'number' && freshHours >= 0 ? freshHours : 24
+    const at = new Date(isoAt).getTime()
+    const now = Date.now()
+    return now - at <= hours * 60 * 60 * 1000
+  }
+
+  useEffect(() => {
+    if (!showLogoutModal) return
+    let cancelled = false
+    apiFetch<MyLastBackupOut>('/backups/my-last')
+      .then((data) => {
+        if (!cancelled) {
+          setMyLastBackup(data)
+          const freshHours = data.fresh_hours ?? 24
+          if (data.last_backup_at && data.last_backup_id != null && isBackupRecent(data.last_backup_at, freshHours)) {
+            setBackupDownloadedId(String(data.last_backup_id))
+          }
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setMyLastBackup(null)
+      })
+    return () => { cancelled = true }
+  }, [showLogoutModal])
 
   const [downloadFallback, setDownloadFallback] = useState<{ url: string; filename: string } | null>(null)
 
@@ -236,7 +271,9 @@ export function DashboardPage() {
             <div className="text-right">
               <div className="text-xl font-bold">התנתקות</div>
               <div className="text-sm text-muted mt-2">
-                לפני התנתקות יש לבצע גיבוי. הורידו את קובץ הגיבוי למחשב, ואז לחצו התנתק.
+                {myLastBackup?.last_backup_at && myLastBackup.last_backup_id != null && isBackupRecent(myLastBackup.last_backup_at, myLastBackup.fresh_hours ?? 24)
+                  ? `בוצע גיבוי לאחרונה בתאריך ${fmt.format(new Date(myLastBackup.last_backup_at))} — ניתן להתנתק.`
+                  : 'לפני התנתקות יש לבצע גיבוי. הורידו את קובץ הגיבוי למחשב, או התנתקו לאחר הורדה.'}
               </div>
               {backupError ? (
                 <div className="mt-3 text-sm text-red-300">{backupError}</div>

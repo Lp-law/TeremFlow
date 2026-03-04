@@ -355,6 +355,166 @@ def _build_raw_from_row(header: list, col_map: dict[int, str], row: tuple, opera
     return raw
 
 
+def _parse_row_to_create_values(data: dict[str, Any]) -> dict[str, Any]:
+    """Parse row data into operational_values dict as for create. Raises on invalid. Dates/Decimals as ISO string for JSON."""
+    out: dict[str, Any] = {}
+    ref = str(data.get("case_reference") or "").strip()
+    if not ref:
+        raise ValueError("Missing case_reference")
+    out["case_reference"] = ref
+    out["case_name"] = (str(data.get("case_name") or "").strip() or None)
+    if data.get("case_type") in (None, ""):
+        raise ValueError("Missing case_type")
+    out["case_type"] = _parse_case_type(data["case_type"]).value
+    if data.get("open_date") in (None, ""):
+        raise ValueError("Missing open_date")
+    out["open_date"] = _parse_date(data["open_date"]).isoformat()
+    out["deductible_usd"] = str(data["deductible_usd"]) if data.get("deductible_usd") not in (None, "") else None
+    out["deductible_ils_gross"] = str(data["deductible_ils_gross"]) if data.get("deductible_ils_gross") not in (None, "") else None
+    out["branch_name"] = (str(data.get("branch_name") or "").strip() or None)
+    out["retainer_anchor_date"] = _parse_date(data["retainer_anchor_date"]).isoformat() if data.get("retainer_anchor_date") not in (None, "") else None
+    r = _parse_decimal_ge_zero(data.get("retainer_snapshot_ils_gross"), "retainer_snapshot_ils_gross")
+    out["retainer_snapshot_ils_gross"] = str(r) if r is not None else None
+    if data.get("retainer_snapshot_through_month") not in (None, ""):
+        out["retainer_snapshot_through_month"] = _parse_date(data["retainer_snapshot_through_month"]).isoformat()
+    else:
+        out["retainer_snapshot_through_month"] = None
+    e = _parse_decimal_ge_zero(data.get("expenses_snapshot_ils_gross"), "expenses_snapshot_ils_gross")
+    out["expenses_snapshot_ils_gross"] = str(e) if e is not None else None
+    out["historical_fee_stages"] = _parse_historical_fee_stages(data.get("historical_fee_stages"))
+    raw_legacy = data.get("legacy_fee_text")
+    out["legacy_fee_text"] = (str(raw_legacy).strip() or None) if raw_legacy not in (None, "") else None
+    performed_valid, _ = _parse_performed_fee_stage_codes(data.get("performed_fee_stage_codes"))
+    out["performed_fee_stage_codes"] = performed_valid
+    return out
+
+
+def _serialize_preview_value(v: Any) -> Any:
+    """JSON-serializable value for preview (date -> str, Decimal -> str, enum -> value)."""
+    if v is None:
+        return None
+    if isinstance(v, (dt.date, dt.datetime)):
+        return v.isoformat() if hasattr(v, "isoformat") else str(v)
+    if isinstance(v, Decimal):
+        return str(v)
+    if hasattr(v, "value") and not isinstance(v, type):  # enum instance
+        return getattr(v, "value", str(v))
+    if isinstance(v, list):
+        return [_serialize_preview_value(x) for x in v]
+    return v
+
+
+def preview_import_excel(file_bytes: bytes) -> dict[str, Any]:
+    """Preview create import: no DB writes. Returns detected_headers, operational_headers, raw_headers, sample_rows, warnings."""
+    header, col_map, data_rows = _build_col_map_and_rows(file_bytes)
+    detected_headers = [str(h).strip() if h is not None else "" for h in header]
+    operational_headers = sorted(set(col_map.values()))
+    raw_headers = [
+        str(header[i]).strip() if i < len(header) and header[i] is not None else f"col_{i}"
+        for i in range(len(header))
+        if i not in col_map
+    ]
+    warnings: list[str] = []
+    required = {"case_reference", "case_type", "open_date"}
+    if not required.issubset(set(col_map.values())):
+        warnings.append(f"Missing required columns for create: {sorted(required - set(col_map.values()))}")
+    if "deductible_usd" in operational_headers and "deductible_ils_gross" in operational_headers:
+        warnings.append("Both deductible_usd and deductible_ils_gross present; ILS preferred when both set.")
+    sample_rows: list[dict[str, Any]] = []
+    for row in data_rows[:10]:
+        if not any(row):
+            continue
+        data = {col_map[idx]: row[idx] if idx < len(row) else None for idx in col_map}
+        raw_values = _build_raw_from_row(header, col_map, row, OPERATIONAL_FIELDS)
+        raw_serialized = {k: _serialize_preview_value(v) for k, v in raw_values.items()}
+        try:
+            op_vals = _parse_row_to_create_values(data)
+            operational_values = {k: _serialize_preview_value(v) for k, v in op_vals.items()}
+        except Exception as e:
+            operational_values = {k: _serialize_preview_value(v) for k, v in data.items()}
+            warnings.append(f"Row parse warning: {e}")
+        sample_rows.append({
+            "case_reference": data.get("case_reference"),
+            "operational_values": operational_values,
+            "raw_values": raw_serialized,
+        })
+        if len(sample_rows) >= 10:
+            break
+    return {
+        "detected_headers": detected_headers,
+        "operational_headers": operational_headers,
+        "raw_headers": raw_headers,
+        "sample_rows": sample_rows,
+        "warnings": warnings,
+    }
+
+
+def preview_import_excel_update(
+    file_bytes: bytes, *, overwrite_blanks: bool = False, db: Session | None = None
+) -> dict[str, Any]:
+    """Preview update import: no DB writes except read-only case lookup. Returns same as preview_import_excel + case_found, will_update_fields per row."""
+    header, col_map, data_rows = _build_col_map_and_rows(file_bytes)
+    if "case_reference" not in col_map.values():
+        raise HTTPException(status_code=400, detail="Missing required column: case_reference (for lookup)")
+    detected_headers = [str(h).strip() if h is not None else "" for h in header]
+    operational_headers = sorted(set(col_map.values()))
+    raw_headers = [
+        str(header[i]).strip() if i < len(header) and header[i] is not None else f"col_{i}"
+        for i in range(len(header))
+        if i not in col_map
+    ]
+    warnings: list[str] = []
+    sample_rows: list[dict[str, Any]] = []
+    rows_not_found = 0
+    for row in data_rows[:10]:
+        if not any(row):
+            continue
+        data = {col_map[idx]: row[idx] if idx < len(row) else None for idx in col_map}
+        raw_values = _build_raw_from_row(header, col_map, row, OPERATIONAL_FIELDS)
+        raw_serialized = {k: _serialize_preview_value(v) for k, v in raw_values.items()}
+        try:
+            parsed = _parse_data_to_updates(data)
+        except Exception as e:
+            warnings.append(f"Row parse warning: {e}")
+            parsed = {"case_reference": data.get("case_reference")}
+        ref = parsed.get("case_reference") or data.get("case_reference")
+        case_found = False
+        will_update_fields: list[str] = []
+        if db and ref:
+            case = db.query(Case).filter(Case.case_reference == ref).first()
+            case_found = case is not None
+            if case_found:
+                for k in EXCEL_UPDATE_FIELDS:
+                    if k not in parsed:
+                        continue
+                    if parsed[k] is not None:
+                        will_update_fields.append(k)
+                    elif overwrite_blanks:
+                        will_update_fields.append(k)
+        else:
+            if ref and not case_found:
+                rows_not_found += 1
+        sample_rows.append({
+            "case_reference": ref,
+            "operational_values": {k: _serialize_preview_value(v) for k, v in parsed.items()},
+            "raw_values": raw_serialized,
+            "case_found": case_found,
+            "will_update_fields": will_update_fields,
+        })
+        if len(sample_rows) >= 10:
+            break
+    if rows_not_found > 0:
+        warnings.append(f"Rows with case_reference not found in DB (sample): {rows_not_found}")
+    return {
+        "detected_headers": detected_headers,
+        "operational_headers": operational_headers,
+        "raw_headers": raw_headers,
+        "sample_rows": sample_rows,
+        "warnings": warnings,
+        "sample_rows_not_found_count": rows_not_found,
+    }
+
+
 def import_cases_from_excel_update(db: Session, file_bytes: bytes, *, overwrite_blanks: bool = False) -> dict:
     """
     Update existing cases by case_reference. Same header/column mapping as create-import.

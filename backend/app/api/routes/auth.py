@@ -79,11 +79,12 @@ def logout(
                     detail="לא נמצא גיבוי מתאים למשתמש. יש לבצע גיבוי מחדש לפני התנתקות.",
                 )
 
-            # Require this backup to be fresh (avoids reusing an old backup forever).
+            # Require this backup to be within backup_fresh_hours (default 24h).
             created_at = rec.created_at
             if created_at.tzinfo is None:
                 created_at = created_at.replace(tzinfo=dt.timezone.utc)
-            if created_at < dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=30):
+            fresh_hours = getattr(settings, "backup_fresh_hours", 24)
+            if created_at < dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=fresh_hours):
                 raise HTTPException(
                     status_code=status.HTTP_428_PRECONDITION_REQUIRED,
                     detail="הגיבוי ישן מדי. לפני התנתקות חובה לבצע גיבוי מחדש.",
