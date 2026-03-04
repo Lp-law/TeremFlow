@@ -3,10 +3,10 @@ import { Link } from 'react-router-dom'
 import { BackButton } from '../components/BackButton'
 import { apiFetch } from '../lib/api'
 import { downloadTextFile, toCsv } from '../lib/csv'
-import { formatILS } from '../lib/format'
-import type { CaseOut, CaseType, FeeEvent } from '../lib/types'
+import type { CaseOut, CaseType } from '../lib/types'
 
-const FEE_EVENT_LABEL: Record<string, string> = {
+/** Labels for current_procedure_stage (fee event type) in list table. */
+const PROCEDURE_STAGE_LABEL: Record<string, string> = {
   COURT_STAGE_1_DEFENSE: 'שלב 1 — כתב הגנה',
   COURT_STAGE_2_DAMAGES: 'שלב 2 — חישובי נזק',
   COURT_STAGE_3_EVIDENCE: 'שלב 3 — הגשת ראיות',
@@ -19,6 +19,8 @@ const FEE_EVENT_LABEL: Record<string, string> = {
   DEMAND_FIX: 'מכתב דרישה — קבוע',
   DEMAND_HOURLY: 'מכתב דרישה — שעתי',
   SMALL_CLAIMS_MANUAL: 'תביעות קטנות — ידני',
+  APPEAL: 'ערעור',
+  STAGE_BILLING: 'חיוב לפי שלבים',
 }
 
 const CASE_TYPE_LABEL: Record<string, string> = {
@@ -45,7 +47,6 @@ const defaultCreateForm: CreateCaseForm = {
 
 export function CasesPage() {
   const [items, setItems] = useState<CaseOut[]>([])
-  const [stageByCaseId, setStageByCaseId] = useState<Record<number, string>>({})
   const [query, setQuery] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -61,23 +62,6 @@ export function CasesPage() {
     try {
       const data = await apiFetch<CaseOut[]>('/cases/')
       setItems(data)
-      const stages: Record<number, string> = {}
-      await Promise.all(
-        data.map(async (c) => {
-          try {
-            const fees = await apiFetch<FeeEvent[]>(`/cases/${c.id}/fees/`)
-            if (fees.length > 0) {
-              const latest = [...fees].sort(
-                (a, b) => new Date(b.event_date).getTime() - new Date(a.event_date).getTime()
-              )[0]
-              stages[c.id] = FEE_EVENT_LABEL[latest.event_type] || latest.event_type
-            }
-          } catch {
-            // ignore per-case fee fetch errors
-          }
-        })
-      )
-      setStageByCaseId(stages)
     } catch (e: any) {
       setError(e?.message || 'שגיאה')
     } finally {
@@ -95,8 +79,7 @@ export function CasesPage() {
     return items.filter(
       (c) =>
         c.case_reference.toLowerCase().includes(q) ||
-        (c.case_name?.toLowerCase().includes(q) ?? false) ||
-        String(c.id).includes(q)
+        (c.case_name?.toLowerCase().includes(q) ?? false)
     )
   }, [items, query])
 
@@ -219,36 +202,38 @@ export function CasesPage() {
               <table className="w-full text-sm" dir="rtl">
                 <thead className="text-muted">
                   <tr className="border-b border-border/60">
-                    <th className="text-right py-3">שם התיק</th>
-                    <th className="text-right py-3">שלב ההליך</th>
-                    <th className="text-right py-3">שכ״ט ששולם עד כה</th>
-                    <th className="text-right py-3">הוצאות ששולמו עד כה</th>
-                    <th className="text-right py-3">יתרת השתתפות עצמית</th>
+                    <th className="text-right py-3">מספר תיק</th>
+                    <th className="text-right py-3">שם תיק</th>
+                    <th className="text-right py-3">שלב ההליך הנוכחי</th>
                     <th className="text-right py-3">סטטוס</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.map((c) => (
                     <tr key={c.id} className="border-b border-border/30 hover:bg-surface/30">
+                      <td className="py-3 text-muted text-xs">
+                        {c.case_reference}
+                      </td>
                       <td className="py-3">
-                        <Link to={`/cases/${c.id}`} className="text-primary hover:underline">
-                          {c.case_name ?? c.case_reference}
+                        <Link to={`/cases/${c.id}`} className="text-primary hover:underline font-medium">
+                          {c.case_name?.trim()
+                            ? `${c.case_name.trim()} ( ${c.case_reference} )`
+                            : c.case_reference}
                         </Link>
                       </td>
-                      <td className="py-3">{stageByCaseId[c.id] ?? 'לא הוגדר'}</td>
                       <td className="py-3">
-                        {c.retainer_snapshot_ils_gross != null ? formatILS(c.retainer_snapshot_ils_gross) : '—'}
+                        {c.current_procedure_stage
+                          ? (PROCEDURE_STAGE_LABEL[c.current_procedure_stage] ?? c.current_procedure_stage)
+                          : 'לא הוגדר'}
                       </td>
                       <td className="py-3">
-                        {c.expenses_snapshot_ils_gross != null ? formatILS(c.expenses_snapshot_ils_gross) : '—'}
+                        {c.status === 'OPEN' ? 'פתוח' : c.status === 'CLOSED' ? 'סגור' : 'לא הוגדר'}
                       </td>
-                      <td className="py-3">{formatILS(c.excess_remaining_ils_gross)}</td>
-                      <td className="py-3">{c.status === 'OPEN' ? 'פתוח' : 'סגור'}</td>
                     </tr>
                   ))}
                   {filtered.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="py-10 text-center text-muted">
+                      <td colSpan={4} className="py-10 text-center text-muted">
                         אין תוצאות
                       </td>
                     </tr>

@@ -36,6 +36,8 @@ export type CaseOut = {
   open_date: string
   retainer_anchor_date: string
   branch_name: string | null
+  /** Latest fee event type (procedure stage); set by list API only. */
+  current_procedure_stage?: string | null
   deductible_ils_gross: string | number
   retainer_snapshot_ils_gross: string | number | null
   retainer_snapshot_through_month: string | null

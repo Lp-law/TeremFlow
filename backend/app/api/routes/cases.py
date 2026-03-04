@@ -15,7 +15,12 @@ router = APIRouter()
 @router.get("/", response_model=list[CaseOut])
 def list_cases(db: Session = Depends(get_db), _=Depends(require_auth)):
     items = case_service.list_cases(db)
-    return [CaseOut(**case_service.to_case_out(db, c)) for c in items]
+    case_ids = [c.id for c in items]
+    stages = case_service.get_latest_fee_stage_by_case_ids(db, case_ids)
+    return [
+        CaseOut(**case_service.to_case_out(db, c, current_procedure_stage=stages.get(c.id)))
+        for c in items
+    ]
 
 
 @router.get("/{case_id}", response_model=CaseOut)

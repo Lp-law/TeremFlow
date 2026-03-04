@@ -37,6 +37,8 @@ class CaseOut(BaseModel):
     open_date: dt.date
     retainer_anchor_date: dt.date
     branch_name: str | None
+    # Latest fee event type (procedure stage) for list UX; set only in list endpoint.
+    current_procedure_stage: str | None = None
 
     deductible_usd: Decimal | None
     fx_rate_usd_ils: Decimal | None

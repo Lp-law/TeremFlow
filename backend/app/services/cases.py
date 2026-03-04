@@ -216,9 +216,30 @@ def update_case_status(db: Session, *, case_id: int, status_value) -> Case:
     return c
 
 
-def to_case_out(db: Session, case: Case) -> dict:
+def get_latest_fee_stage_by_case_ids(db: Session, case_ids: list[int]) -> dict[int, str]:
+    """Return mapping case_id -> latest fee event_type (code string). One query for all cases."""
+    if not case_ids:
+        return {}
+    from app.models.fee_event import FeeEvent
+
+    rows = (
+        db.query(FeeEvent.case_id, FeeEvent.event_type)
+        .filter(FeeEvent.case_id.in_(case_ids))
+        .order_by(FeeEvent.event_date.desc(), FeeEvent.id.desc())
+        .all()
+    )
+    result: dict[int, str] = {}
+    for case_id, event_type in rows:
+        if case_id not in result:
+            result[case_id] = event_type.value if hasattr(event_type, "value") else str(event_type)
+    return result
+
+
+def to_case_out(
+    db: Session, case: Case, *, current_procedure_stage: str | None = None
+) -> dict:
     excess = get_case_excess_remaining(db, case)
-    return {
+    out = {
         "id": case.id,
         "case_reference": case.case_reference,
         "case_name": case.case_name,
@@ -227,6 +248,7 @@ def to_case_out(db: Session, case: Case) -> dict:
         "open_date": case.open_date,
         "retainer_anchor_date": case.retainer_anchor_date,
         "branch_name": case.branch_name,
+        "current_procedure_stage": current_procedure_stage,
         "deductible_usd": case.deductible_usd,
         "fx_rate_usd_ils": case.fx_rate_usd_ils,
         "fx_date_used": case.fx_date_used,
@@ -243,5 +265,6 @@ def to_case_out(db: Session, case: Case) -> dict:
         "raw_import_fields_json": case.raw_import_fields_json or {},
         "excess_remaining_ils_gross": excess,
     }
+    return out
 
 
