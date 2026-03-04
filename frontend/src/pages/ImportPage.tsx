@@ -2,7 +2,11 @@ import { useEffect, useState } from 'react'
 import { BackButton } from '../components/BackButton'
 import { API_BASE_URL } from '../lib/api'
 
+type ImportMode = 'create' | 'update'
+
 export function ImportPage() {
+  const [mode, setMode] = useState<ImportMode>('create')
+  const [overwriteBlanks, setOverwriteBlanks] = useState(false)
   const [file, setFile] = useState<File | null>(null)
   const [result, setResult] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
@@ -61,7 +65,11 @@ export function ImportPage() {
     try {
       const form = new FormData()
       form.append('file', file)
-      const res = await fetch(`${API_BASE_URL}/import/excel`, { method: 'POST', body: form, credentials: 'include' })
+      let url = mode === 'update'
+        ? `${API_BASE_URL}/import/excel-update`
+        : `${API_BASE_URL}/import/excel`
+      if (mode === 'update' && overwriteBlanks) url += '?overwrite_blanks=true'
+      const res = await fetch(url, { method: 'POST', body: form, credentials: 'include' })
       if (!res.ok) {
         let detail = 'שגיאה'
         try {
@@ -122,7 +130,24 @@ export function ImportPage() {
         </div>
 
         <div className="mt-6 card p-6 text-right">
-          <div className="text-sm text-muted">בחרו קובץ Excel והעלו אותו לשרת.</div>
+          <div className="flex flex-wrap items-center gap-4 mb-4">
+            <span className="text-sm font-semibold text-muted">מצב ייבוא:</span>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="radio" name="mode" checked={mode === 'create'} onChange={() => setMode('create')} />
+              <span>יצירת תיקים חדשים</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="radio" name="mode" checked={mode === 'update'} onChange={() => setMode('update')} />
+              <span>עדכון תיקים קיימים (לפי מזהה תיק)</span>
+            </label>
+          </div>
+          {mode === 'update' ? (
+            <label className="flex items-center gap-2 cursor-pointer mt-2 text-sm text-muted">
+              <input type="checkbox" checked={overwriteBlanks} onChange={(e) => setOverwriteBlanks(e.target.checked)} />
+              <span>ריקים ידרסו ערכים קיימים (overwrite_blanks)</span>
+            </label>
+          ) : null}
+          <div className="text-sm text-muted mt-2">בחרו קובץ Excel והעלו אותו לשרת.</div>
           <div className="mt-4 flex flex-col md:flex-row gap-3 md:items-center">
             <input
               type="file"
@@ -141,9 +166,28 @@ export function ImportPage() {
 
           {error ? <div className="mt-4 text-sm text-red-300">{error}</div> : null}
           {result ? (
-            <pre className="mt-4 text-xs bg-surface/50 border border-border/60 rounded-2xl p-4 overflow-auto text-left">
-              {JSON.stringify(result, null, 2)}
-            </pre>
+            <div className="mt-4 space-y-3">
+              {mode === 'update' ? (
+                <div className="text-sm">
+                  <span className="text-muted">עודכנו: </span>
+                  <strong>{result.updated ?? 0}</strong>
+                  {result.error_count > 0 && (
+                    <span className="mr-3 text-amber-400"> • שגיאות: {result.error_count}</span>
+                  )}
+                </div>
+              ) : (
+                <div className="text-sm">
+                  <span className="text-muted">נוצרו: </span>
+                  <strong>{result.created ?? 0}</strong>
+                  {result.error_count > 0 && (
+                    <span className="mr-3 text-amber-400"> • שגיאות: {result.error_count}</span>
+                  )}
+                </div>
+              )}
+              <pre className="text-xs bg-surface/50 border border-border/60 rounded-2xl p-4 overflow-auto text-left">
+                {JSON.stringify(result, null, 2)}
+              </pre>
+            </div>
           ) : null}
         </div>
       </div>
