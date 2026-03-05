@@ -1040,7 +1040,7 @@ function ExpensesDetailTable({
   initialPayerFilter: ExpensePayer | ''
   onConsumedInitialFilter?: () => void
 }) {
-  const [summary, setSummary] = useState<ExpenseSummary | null>(null)
+  const [, setSummary] = useState<ExpenseSummary | null>(null)
   const [payerFilter, setPayerFilter] = useState<ExpensePayer | ''>(initialPayerFilter)
   useEffect(() => {
     if (initialPayerFilter && onConsumedInitialFilter) {
