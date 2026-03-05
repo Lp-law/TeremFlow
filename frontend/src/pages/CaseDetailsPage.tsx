@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { BackButton } from '../components/BackButton'
-import { apiFetch } from '../lib/api'
+import { apiDownload, apiFetch } from '../lib/api'
 import { Badge } from '../components/Badge'
 import { formatILS, formatDateYMD, isOverdue, toNumber } from '../lib/format'
 import {
@@ -94,6 +94,8 @@ export function CaseDetailsPage() {
   const [feesReloadKey, setFeesReloadKey] = useState(0)
 
   const [feeEvents, setFeeEvents] = useState<FeeEvent[]>([])
+  const [exportLoading, setExportLoading] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
 
   useEffect(() => {
     if (activeModal) {
@@ -136,6 +138,28 @@ export function CaseDetailsPage() {
     return FEE_EVENT_LABEL[latest.event_type] ?? latest.event_type
   }, [feeEvents])
 
+  async function handleExportCase() {
+    if (!Number.isFinite(id)) return
+    setExportLoading(true)
+    setToast(null)
+    try {
+      const { blob, filename } = await apiDownload(`/cases/${id}/export`)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename || `case_${id}_export.xlsx`
+      a.click()
+      URL.revokeObjectURL(url)
+      setToast('הורדת הקובץ החלה בהצלחה')
+      setTimeout(() => setToast(null), 4000)
+    } catch (e: any) {
+      setToast(e?.message || 'שגיאה בייצוא תיק')
+      setTimeout(() => setToast(null), 4000)
+    } finally {
+      setExportLoading(false)
+    }
+  }
+
   return (
     <div className="min-h-screen w-full px-6 py-10">
       <div className="mx-auto w-full max-w-6xl">
@@ -149,10 +173,23 @@ export function CaseDetailsPage() {
             ) : null}
           </div>
           <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={handleExportCase}
+              disabled={exportLoading || !caseItem}
+              className="btn btn-secondary"
+            >
+              {exportLoading ? 'מייצא...' : 'ייצוא תיק'}
+            </button>
             <BackButton />
           </div>
         </div>
 
+        {toast ? (
+          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-primary text-bg2 shadow-lg">
+            {toast}
+          </div>
+        ) : null}
         {error ? <div className="mt-6 text-sm text-red-300 text-right">{error}</div> : null}
         {isLoading ? <div className="mt-6 text-sm text-muted text-right">טוען...</div> : null}
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from fastapi import HTTPException, status
@@ -8,6 +9,7 @@ from fastapi import HTTPException, status
 from app.api.deps import require_auth
 from app.db.session import get_db
 from app.models.case import Case
+from app.services import case_export as export_service
 from app.schemas.case import CaseBulkUpdateRequest, CaseBulkUpdateResponse, CaseCreate, CaseOut, CaseUpdateStatus
 from app.schemas.case_overview import CaseOverviewSummaryOut
 from app.schemas.warnings import CaseWarningOut, CaseWarningsOut
@@ -42,6 +44,19 @@ def get_case_warnings(case_id: int, db: Session = Depends(get_db), _=Depends(req
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
     warnings = case_service.get_case_warnings(db, case_id)
     return CaseWarningsOut(warnings=[CaseWarningOut(**w) for w in warnings])
+
+
+@router.get("/{case_id}/export")
+def export_case(case_id: int, db: Session = Depends(get_db), _=Depends(require_auth)):
+    """Smart Case Export: download single-case XLSX (overview, fees, retainer, expenses, deductible, raw import)."""
+    xlsx_bytes, filename = export_service.build_case_export_xlsx(db, case_id)
+    if not xlsx_bytes:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+    return Response(
+        content=xlsx_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/{case_id}", response_model=CaseOut)
