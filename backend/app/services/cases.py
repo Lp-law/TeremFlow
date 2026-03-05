@@ -6,10 +6,13 @@ from typing import Any
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from sqlalchemy import func
+
 from app.models.case import Case
-from app.models.enums import CaseStatus, CaseType
+from app.models.enums import CaseStatus, CaseType, FeeEventType
+from app.models.fee_event import FeeEvent
 from app.services.boi_fx import FxLookupError, get_usd_ils_rate
-from app.services.expenses import get_case_excess_remaining
+from app.services.expenses import get_case_excess_remaining, get_deductible_summary
 from app.services.retainer import ensure_accruals_up_to, get_retainer_anchor_date
 
 
@@ -363,6 +366,171 @@ def build_case_overview_summary(db: Session, case_id: int) -> dict | None:
             "excess_remaining_ils": ded_summary["excess_remaining_ils"],
         },
     }
+
+
+# Raw import keys (lowercase) that suggest retainer / deductible / expenses for "not mapped" heuristic.
+_RAW_RETAINER_KEY_SUBSTRINGS = ("retainer",)
+_RAW_DEDUCTIBLE_KEY_SUBSTRINGS = ("deductible", "excess")
+_RAW_EXPENSES_KEY_SUBSTRINGS = ("expense",)
+
+
+def _raw_has_group(raw: dict | None, substrings: tuple[str, ...]) -> bool:
+    if not raw:
+        return False
+    keys_lower = " ".join(k.lower() for k in raw.keys())
+    return any(s in keys_lower for s in substrings)
+
+
+def get_case_warnings(db: Session, case_id: int) -> list[dict[str, Any]]:
+    """
+    Data quality warnings for a case (read-only). No formula or data changes.
+    Returns list of { code, severity, title, details, action_tab? }.
+    """
+    case = db.query(Case).filter(Case.id == case_id).first()
+    if not case:
+        return []
+
+    warnings: list[dict[str, Any]] = []
+
+    # 1) Missing core fields
+    if not (getattr(case, "case_name", None) or "").strip():
+        warnings.append({
+            "code": "MISSING_CASE_NAME",
+            "severity": "warn",
+            "title": "חסר שם תיק (צדדים)",
+            "details": "מומלץ למלא שם תיק לצורך זיהוי ורישום.",
+            "action_tab": "overview",
+        })
+    if getattr(case, "case_type", None) is None:
+        warnings.append({
+            "code": "MISSING_CASE_TYPE",
+            "severity": "error",
+            "title": "חסר סוג תיק",
+            "details": "סוג תיק נדרש לדיווח וחיוב.",
+            "action_tab": "overview",
+        })
+    if getattr(case, "open_date", None) is None:
+        warnings.append({
+            "code": "MISSING_OPEN_DATE",
+            "severity": "error",
+            "title": "חסר תאריך פתיחה",
+            "details": "תאריך פתיחה נדרש לחישובים.",
+            "action_tab": "overview",
+        })
+
+    # 2) Deductible/excess
+    d_ils = getattr(case, "deductible_ils_gross", None)
+    d_usd = getattr(case, "deductible_usd", None)
+    d_ils_ok = d_ils is not None and (isinstance(d_ils, Decimal) and d_ils > 0 or (not isinstance(d_ils, Decimal) and float(d_ils or 0) > 0))
+    d_usd_ok = d_usd is not None and (isinstance(d_usd, Decimal) and d_usd > 0 or (not isinstance(d_usd, Decimal) and float(d_usd or 0) > 0))
+    if not d_ils_ok and not d_usd_ok:
+        warnings.append({
+            "code": "MISSING_DEDUCTIBLE",
+            "severity": "error",
+            "title": "חסר אקסס",
+            "details": "לא הוגדר אקסס (ש״ח או USD).",
+            "action_tab": "deductible",
+        })
+    else:
+        ded_summary = get_deductible_summary(db, case)
+        total_ils = ded_summary.get("deductible_total_ils") or Decimal("0")
+        if total_ils == 0:
+            warnings.append({
+                "code": "DEDUCTIBLE_ZERO",
+                "severity": "warn",
+                "title": "אקסס = 0 (בדוק אם תקין)",
+                "details": "סה״כ אקסס מוגדר כאפס.",
+                "action_tab": "deductible",
+            })
+
+    # 3) Retainer configuration
+    if getattr(case, "retainer_anchor_date", None) is None:
+        warnings.append({
+            "code": "MISSING_RETAINER_ANCHOR",
+            "severity": "warn",
+            "title": "חסר עוגן ריטיינר",
+            "details": "תאריך עוגן ריטיינר נדרש לחישוב צבירה.",
+            "action_tab": "retainer",
+        })
+    snap_paid = getattr(case, "retainer_snapshot_ils_gross", None)
+    snap_through = getattr(case, "retainer_snapshot_through_month", None)
+    snap_paid_set = snap_paid is not None and (float(snap_paid or 0) != 0)
+    if snap_through is not None and not snap_paid_set:
+        warnings.append({
+            "code": "RETAINER_SNAPSHOT_MISMATCH",
+            "severity": "warn",
+            "title": "סנאפשוט ריטיינר: חסר סכום ששולם",
+            "details": "הוגדר חודש סיום סנאפשוט אך לא סכום ששולם.",
+            "action_tab": "retainer",
+        })
+    if snap_paid_set and snap_through is None:
+        warnings.append({
+            "code": "RETAINER_SNAPSHOT_MISMATCH",
+            "severity": "warn",
+            "title": "סנאפשוט ריטיינר: חסר חודש סיום",
+            "details": "הוגדר סכום סנאפשוט אך לא חודש סיום.",
+            "action_tab": "retainer",
+        })
+
+    # 4) Raw import fields not mapped (heuristic, info only)
+    raw = getattr(case, "raw_import_fields_json", None) or {}
+    if _raw_has_group(raw, _RAW_RETAINER_KEY_SUBSTRINGS):
+        if not snap_paid_set and getattr(case, "retainer_snapshot_through_month", None) is None:
+            warnings.append({
+                "code": "RAW_RETAINER_NOT_MAPPED",
+                "severity": "info",
+                "title": "יש נתוני ריטיינר גולמיים שלא חוברו לחישוב",
+                "details": "בדקו בייבוא גולמי והזינו סנאפשוט ריטיינר אם רלוונטי.",
+                "action_tab": "retainer",
+            })
+    if _raw_has_group(raw, _RAW_DEDUCTIBLE_KEY_SUBSTRINGS) and not d_ils_ok and not d_usd_ok:
+        warnings.append({
+            "code": "RAW_DEDUCTIBLE_NOT_MAPPED",
+            "severity": "info",
+            "title": "יש נתוני השתתפות עצמית/אקסס גולמיים שלא חוברו",
+            "details": "בדקו בייבוא גולמי והזינו אקסס אם רלוונטי.",
+            "action_tab": "deductible",
+        })
+    exp_snap = getattr(case, "expenses_snapshot_ils_gross", None)
+    exp_snap_set = exp_snap is not None and (float(exp_snap or 0) != 0)
+    if _raw_has_group(raw, _RAW_EXPENSES_KEY_SUBSTRINGS) and not exp_snap_set:
+        warnings.append({
+            "code": "RAW_EXPENSES_NOT_MAPPED",
+            "severity": "info",
+            "title": "יש נתוני הוצאות גולמיים שלא חוברו לחישוב",
+            "details": "בדקו בייבוא גולמי והזינו סנאפשוט הוצאות אם רלוונטי.",
+            "action_tab": "expenses",
+        })
+
+    # 5) Fees
+    fee_count = db.query(func.count(FeeEvent.id)).filter(FeeEvent.case_id == case_id).scalar() or 0
+    has_fee_events = fee_count > 0
+    if has_fee_events and getattr(case, "case_type", None) is None:
+        warnings.append({
+            "code": "FEES_BUT_NO_CASE_TYPE",
+            "severity": "warn",
+            "title": "קיים חיוב אך סוג תיק חסר",
+            "details": "יש אירועי שכ״ט אך סוג התיק לא הוגדר.",
+            "action_tab": "fees",
+        })
+    has_stage_billing = (
+        db.query(FeeEvent.id)
+        .filter(FeeEvent.case_id == case_id, FeeEvent.event_type == FeeEventType.STAGE_BILLING)
+        .limit(1)
+        .first()
+        is not None
+    )
+    performed = getattr(case, "performed_fee_stage_codes", None)
+    if has_stage_billing and (not performed or not isinstance(performed, list) or len(performed) == 0):
+        warnings.append({
+            "code": "STAGE_BILLING_NO_PERFORMED_CODES",
+            "severity": "warn",
+            "title": "קיים חיוב שלב אך לא נשמרו קודי שלבים שבוצעו",
+            "details": "מומלץ לעדכן שלבים שבוצעו לצורך תצוגה עקבית.",
+            "action_tab": "fees",
+        })
+
+    return warnings
 
 
 def bulk_update_cases(db: Session, case_ids: list[int], updates) -> int:

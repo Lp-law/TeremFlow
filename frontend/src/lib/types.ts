@@ -108,6 +108,18 @@ export type CaseOverviewSummary = {
   }
 }
 
+export type CaseWarning = {
+  code: string
+  severity: 'info' | 'warn' | 'error'
+  title: string
+  details: string
+  action_tab?: string | null
+}
+
+export type CaseWarningsResponse = {
+  warnings: CaseWarning[]
+}
+
 export type RetainerAccrual = {
   id: number
   accrual_month: string

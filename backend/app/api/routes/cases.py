@@ -10,6 +10,7 @@ from app.db.session import get_db
 from app.models.case import Case
 from app.schemas.case import CaseBulkUpdateRequest, CaseBulkUpdateResponse, CaseCreate, CaseOut, CaseUpdateStatus
 from app.schemas.case_overview import CaseOverviewSummaryOut
+from app.schemas.warnings import CaseWarningOut, CaseWarningsOut
 from app.services import cases as case_service
 
 router = APIRouter()
@@ -32,6 +33,15 @@ def get_case_overview_summary(case_id: int, db: Session = Depends(get_db), _=Dep
     if data is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
     return CaseOverviewSummaryOut(**data)
+
+
+@router.get("/{case_id}/warnings", response_model=CaseWarningsOut)
+def get_case_warnings(case_id: int, db: Session = Depends(get_db), _=Depends(require_auth)):
+    case = db.query(Case).filter(Case.id == case_id).first()
+    if not case:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+    warnings = case_service.get_case_warnings(db, case_id)
+    return CaseWarningsOut(warnings=[CaseWarningOut(**w) for w in warnings])
 
 
 @router.get("/{case_id}", response_model=CaseOut)

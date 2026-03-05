@@ -13,6 +13,8 @@ import { useUnsavedGuard } from '../lib/useUnsavedGuard'
 import type {
   CaseOut,
   CaseOverviewSummary,
+  CaseWarning,
+  CaseWarningsResponse,
   DeductibleSummary,
   ExpenseCategory,
   ExpenseOut,
@@ -291,6 +293,8 @@ function OverviewTab({
   const [overview, setOverview] = useState<CaseOverviewSummary | null>(null)
   const [overviewLoading, setOverviewLoading] = useState(true)
   const [overviewError, setOverviewError] = useState<string | null>(null)
+  const [warnings, setWarnings] = useState<CaseWarning[]>([])
+  const [warningsLoading, setWarningsLoading] = useState(true)
 
   useEffect(() => {
     let cancelled = false
@@ -300,6 +304,16 @@ function OverviewTab({
       .then((d) => { if (!cancelled) setOverview(d) })
       .catch((e: any) => { if (!cancelled) setOverviewError(e?.message || 'שגיאה') })
       .finally(() => { if (!cancelled) setOverviewLoading(false) })
+    return () => { cancelled = true }
+  }, [caseId])
+
+  useEffect(() => {
+    let cancelled = false
+    setWarningsLoading(true)
+    apiFetch<CaseWarningsResponse>(`/cases/${caseId}/warnings`)
+      .then((d) => { if (!cancelled) setWarnings(d.warnings) })
+      .catch(() => { if (!cancelled) setWarnings([]) })
+      .finally(() => { if (!cancelled) setWarningsLoading(false) })
     return () => { cancelled = true }
   }, [caseId])
 
@@ -379,6 +393,47 @@ function OverviewTab({
             </div>
           </div>
         ) : null}
+      </section>
+
+      {/* Data quality warnings — read-only; no formula or data changes */}
+      <section>
+        <h3 className="text-sm font-semibold text-muted mb-3">אזהרות / בדיקות תקינות</h3>
+        {warningsLoading ? (
+          <div className="text-sm text-muted py-2">טוען בדיקות...</div>
+        ) : warnings.length === 0 ? (
+          <div className="text-sm text-muted py-2">אין אזהרות.</div>
+        ) : (
+          <ul className="space-y-2">
+            {warnings.map((w) => (
+              <li
+                key={w.code}
+                className={`flex flex-wrap items-center gap-2 rounded px-3 py-2 text-sm ${
+                  w.severity === 'error'
+                    ? 'bg-red-50 text-red-800 border border-red-200'
+                    : w.severity === 'warn'
+                      ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                      : 'bg-slate-100 text-slate-700 border border-slate-200'
+                }`}
+              >
+                <span className="font-medium">{w.title}</span>
+                <span className="text-muted">—</span>
+                <span>{w.details}</span>
+                {w.action_tab && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const t = w.action_tab as 'overview' | 'expenses' | 'deductible' | 'retainer' | 'fees'
+                      if (['overview', 'expenses', 'deductible', 'retainer', 'fees'].includes(t)) setTab(t)
+                    }}
+                    className="btn btn-secondary btn-sm ms-auto"
+                  >
+                    פתח
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <section>
