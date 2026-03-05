@@ -10,7 +10,15 @@ from app.api.deps import require_auth
 from app.db.session import get_db
 from app.models.case import Case
 from app.services import case_export as export_service
-from app.schemas.case import CaseBulkUpdateRequest, CaseBulkUpdateResponse, CaseCreate, CaseOut, CaseUpdateStatus
+from app.schemas.case import (
+    CaseBulkUpdateRequest,
+    CaseBulkUpdateResponse,
+    CaseCreate,
+    CaseDeleteRequest,
+    CaseOut,
+    CaseUpdateStatus,
+    ManualOverridesUpdate,
+)
 from app.schemas.case_overview import CaseOverviewSummaryOut
 from app.schemas.warnings import CaseWarningOut, CaseWarningsOut
 from app.services import cases as case_service
@@ -39,7 +47,7 @@ def get_case_overview_summary(case_id: int, db: Session = Depends(get_db), _=Dep
 
 @router.get("/{case_id}/warnings", response_model=CaseWarningsOut)
 def get_case_warnings(case_id: int, db: Session = Depends(get_db), _=Depends(require_auth)):
-    case = db.query(Case).filter(Case.id == case_id).first()
+    case = case_service.get_case_if_not_deleted(db, case_id)
     if not case:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
     warnings = case_service.get_case_warnings(db, case_id)
@@ -61,11 +69,21 @@ def export_case(case_id: int, db: Session = Depends(get_db), _=Depends(require_a
 
 @router.get("/{case_id}", response_model=CaseOut)
 def get_case(case_id: int, db: Session = Depends(get_db), _=Depends(require_auth)):
-    c = db.query(Case).filter(Case.id == case_id).first()
+    c = case_service.get_case_if_not_deleted(db, case_id)
     if not c:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
     stages = case_service.get_latest_fee_stage_by_case_ids(db, [c.id])
     return CaseOut(**case_service.to_case_out(db, c, current_procedure_stage=stages.get(c.id)))
+
+
+@router.delete("/{case_id}", response_model=CaseOut)
+def delete_case(case_id: int, body: CaseDeleteRequest | None = None, db: Session = Depends(get_db), user=Depends(require_auth)):
+    """Soft delete: case is hidden from list and details (404)."""
+    reason = body.delete_reason if body else None
+    c = case_service.soft_delete_case(db, case_id=case_id, user_id=user.id, delete_reason=reason)
+    from app.services.activity_log import log_activity
+    log_activity(db, action="case_delete", entity_type="case", entity_id=c.id, user_id=user.id, details={"reason": c.delete_reason})
+    return CaseOut(**case_service.to_case_out(db, c))
 
 
 @router.post("/", response_model=CaseOut)
@@ -104,5 +122,19 @@ def bulk_update_cases(
 def update_case_status(case_id: int, payload: CaseUpdateStatus, db: Session = Depends(get_db), _=Depends(require_auth)):
     c = case_service.update_case_status(db, case_id=case_id, status_value=payload.status)
     return CaseOut(**case_service.to_case_out(db, c))
+
+
+@router.patch("/{case_id}/overrides", response_model=CaseOut)
+def update_case_overrides(
+    case_id: int,
+    payload: ManualOverridesUpdate,
+    db: Session = Depends(get_db),
+    _=Depends(require_auth),
+):
+    """Update manual overrides for deductible/excess fields. Send null to clear an override."""
+    updates = payload.model_dump(exclude_unset=True)
+    c = case_service.update_case_manual_overrides(db, case_id=case_id, overrides=updates)
+    stages = case_service.get_latest_fee_stage_by_case_ids(db, [c.id])
+    return CaseOut(**case_service.to_case_out(db, c, current_procedure_stage=stages.get(c.id)))
 
 

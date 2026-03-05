@@ -15,6 +15,10 @@ class RetainerAccrualOut(BaseModel):
     is_paid: bool
 
 
+class RetainerFreezeRequest(BaseModel):
+    freeze: bool  # True = freeze, False = unfreeze
+
+
 class RetainerPaymentCreate(BaseModel):
     payment_date: dt.date
     amount_ils_gross: Decimal = Field(gt=0)

@@ -5,10 +5,24 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import require_auth
 from app.db.session import get_db
-from app.schemas.expense import ExpenseCreate, ExpenseOut, ExpenseSummary, ExpenseUpdate
+from app.schemas.expense import ExpenseCreate, ExpenseOut, ExpenseSummary, ExpenseTotalUpdate, ExpenseUpdate
+from app.services import cases as case_service
 from app.services import expenses as expense_service
 
 router = APIRouter()
+
+
+@router.patch("/total", response_model=dict)
+def update_expenses_total(
+    case_id: int,
+    payload: ExpenseTotalUpdate,
+    db: Session = Depends(get_db),
+    _=Depends(require_auth),
+):
+    """Set case-level total expenses (single editable number). Overview and deductible use this."""
+    c = case_service.update_case_expenses_total(db, case_id=case_id, expenses_total_ils_gross=payload.expenses_total_ils_gross)
+    return {"expenses_total_ils_gross": str(c.expenses_total_ils_gross)}
+
 
 def _to_out(e) -> ExpenseOut:
     return ExpenseOut(

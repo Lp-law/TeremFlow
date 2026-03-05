@@ -1,4 +1,4 @@
-"""Case overview summary for top-of-details snapshot."""
+"""Case overview summary for top-of-details snapshot. Unified model."""
 
 from __future__ import annotations
 
@@ -8,26 +8,28 @@ from pydantic import BaseModel
 
 
 class FeesOverview(BaseModel):
-    total_fees_ils: Decimal = Decimal("0.00")
-    fees_due_ils: Decimal = Decimal("0.00")  # not covered by retainer credit
+    fees_by_stages_ils: Decimal = Decimal("0.00")  # sum of non-deleted fee events
+    retainer_charged_to_date_ils: Decimal = Decimal("0.00")  # theoretical charged (945+VAT)*months
+    fee_diff_ils: Decimal = Decimal("0.00")  # fees_by_stages - retainer_charged (may be negative)
     last_fee_event_date: str | None = None  # YYYY-MM-DD
     last_fee_event_amount: Decimal | None = None
 
 
 class RetainerOverview(BaseModel):
-    current_credit_ils: Decimal = Decimal("0.00")
+    retainer_charged_to_date_ils: Decimal = Decimal("0.00")
+    charged_months_count: int = 0
     monthly_gross_ils: Decimal = Decimal("0.00")
+    retainer_is_frozen: bool = False
+    retainer_frozen_at: str | None = None  # YYYY-MM-DD
 
 
 class ExpensesOverview(BaseModel):
-    total_expenses_ils: Decimal = Decimal("0.00")
-    deductible_consumed_ils: Decimal = Decimal("0.00")
+    total_expenses_ils: Decimal = Decimal("0.00")  # case-level editable total
 
 
 class DeductibleOverview(BaseModel):
-    total_ils: Decimal = Decimal("0.00")
-    remaining_ils: Decimal = Decimal("0.00")
-    excess_remaining_ils: Decimal | None = None
+    excess_total_ils: Decimal = Decimal("0.00")
+    excess_remaining_ils: Decimal = Decimal("0.00")
 
 
 class CaseOverviewSummaryOut(BaseModel):

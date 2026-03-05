@@ -8,11 +8,14 @@ from app.db.session import get_db
 from app.models.retainer import RetainerAccrual, RetainerPayment
 from app.schemas.retainer import (
     RetainerAccrualOut,
+    RetainerFreezeRequest,
     RetainerLedgerOut,
     RetainerPaymentCreate,
     RetainerPaymentOut,
     RetainerSummary,
 )
+from app.schemas.case import CaseOut
+from app.services import cases as case_service
 from app.services import fees as fee_service
 from app.services import retainer as retainer_service
 
@@ -102,5 +105,13 @@ def ledger(case_id: int, db: Session = Depends(get_db), _=Depends(require_auth))
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Case not found")
     return RetainerLedgerOut(**data)
+
+
+@router.post("/freeze", response_model=CaseOut)
+def retainer_freeze(case_id: int, payload: RetainerFreezeRequest, db: Session = Depends(get_db), _=Depends(require_auth)):
+    """Toggle retainer freeze: when frozen, charged months and accruals stop at retainer_frozen_at."""
+    c = case_service.set_retainer_freeze(db, case_id=case_id, freeze=payload.freeze)
+    stages = case_service.get_latest_fee_stage_by_case_ids(db, [c.id])
+    return CaseOut(**case_service.to_case_out(db, c, current_procedure_stage=stages.get(c.id)))
 
 

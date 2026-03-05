@@ -12,8 +12,11 @@ from app.models.case import Case
 from app.models.enums import CaseStatus, CaseType, FeeEventType
 from app.models.fee_event import FeeEvent
 from app.services.boi_fx import FxLookupError, get_usd_ils_rate
-from app.services.expenses import get_case_excess_remaining, get_deductible_summary
 from app.services.retainer import ensure_accruals_up_to, get_retainer_anchor_date
+from app.services.unified import (
+    excess_remaining_ils as unified_excess_remaining_ils,
+    get_unified_summary,
+)
 
 
 def q_ils(x: Decimal) -> Decimal:
@@ -21,7 +24,12 @@ def q_ils(x: Decimal) -> Decimal:
 
 
 def list_cases(db: Session) -> list[Case]:
-    return db.query(Case).order_by(Case.open_date.desc(), Case.id.desc()).all()
+    return (
+        db.query(Case)
+        .filter(Case.deleted_at.is_(None))
+        .order_by(Case.open_date.desc(), Case.id.desc())
+        .all()
+    )
 
 
 def create_case(db: Session, payload) -> Case:
@@ -213,7 +221,76 @@ def update_case_status(db: Session, *, case_id: int, status_value) -> Case:
     c = db.query(Case).filter(Case.id == case_id).first()
     if not c:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+    if c.deleted_at is not None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
     c.status = status_value
+    db.commit()
+    db.refresh(c)
+    return c
+
+
+def get_case_if_not_deleted(db: Session, case_id: int) -> Case | None:
+    """Return case if it exists and is not soft-deleted; else None."""
+    c = db.query(Case).filter(Case.id == case_id).first()
+    if not c or c.deleted_at is not None:
+        return None
+    return c
+
+
+def set_retainer_freeze(db: Session, *, case_id: int, freeze: bool) -> Case:
+    """Set retainer_is_frozen and retainer_frozen_at. When freeze=True, set frozen_at=today; else clear."""
+    c = get_case_if_not_deleted(db, case_id)
+    if not c:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+    import datetime as dt
+    c.retainer_is_frozen = freeze
+    c.retainer_frozen_at = dt.date.today() if freeze else None
+    db.commit()
+    db.refresh(c)
+    return c
+
+
+def update_case_expenses_total(db: Session, *, case_id: int, expenses_total_ils_gross: Decimal) -> Case:
+    """Set case-level expenses total (single editable number for UX)."""
+    c = get_case_if_not_deleted(db, case_id)
+    if not c:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+    c.expenses_total_ils_gross = expenses_total_ils_gross
+    db.commit()
+    db.refresh(c)
+    return c
+
+
+def update_case_manual_overrides(db: Session, *, case_id: int, overrides: dict[str, Any]) -> Case:
+    """Merge overrides into case.manual_overrides_json. Keys with None remove the override."""
+    c = get_case_if_not_deleted(db, case_id)
+    if not c:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+    current = dict(getattr(c, "manual_overrides_json", None) or {})
+    for k, v in overrides.items():
+        if v is None:
+            current.pop(k, None)
+        else:
+            # Store JSON-serializable value (Decimal -> float for JSONB)
+            current[k] = float(v) if isinstance(v, Decimal) else v
+    c.manual_overrides_json = current if current else None
+    db.commit()
+    db.refresh(c)
+    return c
+
+
+def soft_delete_case(db: Session, *, case_id: int, user_id: int, delete_reason: str | None = None) -> Case:
+    """Soft delete: set deleted_at, deleted_by_user_id, delete_reason. Case is excluded from list/details."""
+    c = db.query(Case).filter(Case.id == case_id).first()
+    if not c:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+    if c.deleted_at is not None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Case already deleted")
+    from datetime import datetime, timezone
+
+    c.deleted_at = datetime.now(timezone.utc)
+    c.deleted_by_user_id = user_id
+    c.delete_reason = (delete_reason or "").strip() or None
     db.commit()
     db.refresh(c)
     return c
@@ -233,7 +310,7 @@ def get_latest_fee_stage_by_case_ids(db: Session, case_ids: list[int]) -> dict[i
 
     rows = (
         db.query(FeeEvent.case_id, FeeEvent.event_type, FeeEvent.breakdown_json)
-        .filter(FeeEvent.case_id.in_(case_ids))
+        .filter(FeeEvent.case_id.in_(case_ids), FeeEvent.deleted_at.is_(None))
         .order_by(FeeEvent.event_date.desc(), FeeEvent.id.desc())
         .all()
     )
@@ -267,7 +344,7 @@ def _effective_procedure_stage(case: Case, computed_stage: str | None) -> str | 
 def to_case_out(
     db: Session, case: Case, *, current_procedure_stage: str | None = None
 ) -> dict:
-    excess = get_case_excess_remaining(db, case)
+    excess = unified_excess_remaining_ils(db, case)
     effective_stage = _effective_procedure_stage(case, current_procedure_stage)
     out = {
         "id": case.id,
@@ -295,22 +372,25 @@ def to_case_out(
         "performed_fee_stage_codes": case.performed_fee_stage_codes or [],
         "raw_import_fields_json": case.raw_import_fields_json or {},
         "excess_remaining_ils_gross": excess,
+        "retainer_is_frozen": getattr(case, "retainer_is_frozen", False),
+        "retainer_frozen_at": getattr(case, "retainer_frozen_at", None),
+        "expenses_total_ils_gross": getattr(case, "expenses_total_ils_gross", None),
+        "manual_overrides_json": getattr(case, "manual_overrides_json", None) or {},
     }
     return out
 
 
 def build_case_overview_summary(db: Session, case_id: int) -> dict | None:
     """
-    Build aggregated overview for GET /cases/{id}/overview-summary.
-    Single DB session; reuses existing service functions. No billing formula changes.
+    Build aggregated overview for GET /cases/{id}/overview-summary. Uses unified model.
     """
     import datetime as dt
 
     from app.models.fee_event import FeeEvent
-    from app.services import expenses as expense_service
     from app.services import retainer as retainer_service
+    from app.services import unified as unified_service
 
-    case = db.query(Case).filter(Case.id == case_id).first()
+    case = get_case_if_not_deleted(db, case_id)
     if not case:
         return None
 
@@ -318,35 +398,16 @@ def build_case_overview_summary(db: Session, case_id: int) -> dict | None:
     computed_stage = stages.get(case.id)
     current_stage = _effective_procedure_stage(case, computed_stage)
 
-    # Fees: sum from fee events; last event
-    fee_events = (
-        db.query(FeeEvent)
-        .filter(FeeEvent.case_id == case_id)
-        .order_by(FeeEvent.event_date.desc(), FeeEvent.id.desc())
-        .all()
-    )
-    total_fees = sum(Decimal(str(e.computed_amount_ils_gross)) for e in fee_events)
-    fees_due = sum(Decimal(str(e.amount_due_cash_ils_gross)) for e in fee_events)
-    last_fee = fee_events[0] if fee_events else None
-    fees_overview = {
-        "total_fees_ils": q_ils(total_fees),
-        "fees_due_ils": q_ils(fees_due),
-        "last_fee_event_date": last_fee.event_date.isoformat() if last_fee else None,
-        "last_fee_event_amount": q_ils(Decimal(str(last_fee.computed_amount_ils_gross))) if last_fee else None,
-    }
-
-    # Retainer: credit from summary, monthly from retainer_gross_for_month(today)
-    r_summary = retainer_service.retainer_summary(db, case_id=case_id)
+    u = unified_service.get_unified_summary(db, case)
     today = dt.date.today()
     monthly = retainer_service.retainer_gross_for_month(today)
-    retainer_overview = {
-        "current_credit_ils": r_summary["retainer_credit_balance_ils_gross"],
-        "monthly_gross_ils": monthly,
-    }
 
-    # Expenses & deductible
-    exp_summary = expense_service.get_expenses_summary(db, case_id)
-    ded_summary = expense_service.get_deductible_summary(db, case)
+    last_fee = (
+        db.query(FeeEvent)
+        .filter(FeeEvent.case_id == case_id, FeeEvent.deleted_at.is_(None))
+        .order_by(FeeEvent.event_date.desc(), FeeEvent.id.desc())
+        .first()
+    )
 
     return {
         "case_reference": case.case_reference,
@@ -354,16 +415,26 @@ def build_case_overview_summary(db: Session, case_id: int) -> dict | None:
         "branch_name": case.branch_name,
         "status": case.status.value,
         "current_procedure_stage": current_stage,
-        "fees": fees_overview,
-        "retainer": retainer_overview,
+        "fees": {
+            "fees_by_stages_ils": u["fees_by_stages_ils"],
+            "retainer_charged_to_date_ils": u["retainer_charged_to_date_ils"],
+            "fee_diff_ils": u["fee_diff_ils"],
+            "last_fee_event_date": last_fee.event_date.isoformat() if last_fee else None,
+            "last_fee_event_amount": q_ils(Decimal(str(last_fee.computed_amount_ils_gross))) if last_fee else None,
+        },
+        "retainer": {
+            "retainer_charged_to_date_ils": u["retainer_charged_to_date_ils"],
+            "charged_months_count": u["charged_months_count"],
+            "monthly_gross_ils": monthly,
+            "retainer_is_frozen": getattr(case, "retainer_is_frozen", False),
+            "retainer_frozen_at": case.retainer_frozen_at.isoformat() if getattr(case, "retainer_frozen_at", None) else None,
+        },
         "expenses": {
-            "total_expenses_ils": exp_summary["total_expenses_ils"],
-            "deductible_consumed_ils": exp_summary["deductible_consumed_by_expenses_ils"],
+            "total_expenses_ils": u["expenses_total_ils"],
         },
         "deductible": {
-            "total_ils": ded_summary["deductible_total_ils"],
-            "remaining_ils": ded_summary["deductible_remaining_ils"],
-            "excess_remaining_ils": ded_summary["excess_remaining_ils"],
+            "excess_total_ils": u["excess_total_ils"],
+            "excess_remaining_ils": u["excess_remaining_ils"],
         },
     }
 
@@ -432,8 +503,8 @@ def get_case_warnings(db: Session, case_id: int) -> list[dict[str, Any]]:
             "action_tab": "deductible",
         })
     else:
-        ded_summary = get_deductible_summary(db, case)
-        total_ils = ded_summary.get("deductible_total_ils") or Decimal("0")
+        u = get_unified_summary(db, case)
+        total_ils = u.get("excess_total_ils") or Decimal("0")
         if total_ils == 0:
             warnings.append({
                 "code": "DEDUCTIBLE_ZERO",
@@ -557,7 +628,7 @@ def bulk_update_cases(db: Session, case_ids: list[int], updates) -> int:
         else:
             data["procedure_stage_override"] = None
 
-    cases = db.query(Case).filter(Case.id.in_(case_ids)).all()
+    cases = db.query(Case).filter(Case.id.in_(case_ids), Case.deleted_at.is_(None)).all()
     for c in cases:
         if "status" in data:
             c.status = CaseStatus(data["status"])

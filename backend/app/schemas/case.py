@@ -57,11 +57,29 @@ class CaseOut(BaseModel):
     legacy_fee_text: str | None = None  # from Excel "פירוט חיוב שכ״ט עו״ד"
     performed_fee_stage_codes: list[str] | None = None  # last selection for stage-billing
     raw_import_fields_json: dict | None = None  # display-only; Excel columns not mapped to operational fields
-    excess_remaining_ils_gross: Decimal  # Excel P = M - J
+    excess_remaining_ils_gross: Decimal  # unified: excess_total - retainer_charged - expenses_total
+    retainer_is_frozen: bool = False
+    retainer_frozen_at: dt.date | None = None
+    expenses_total_ils_gross: Decimal | None = None
+    manual_overrides_json: dict | None = None
 
 
 class CaseUpdateStatus(BaseModel):
     status: CaseStatus
+
+
+class CaseDeleteRequest(BaseModel):
+    delete_reason: str | None = None
+
+
+class ManualOverridesUpdate(BaseModel):
+    """Merge into case.manual_overrides_json. Send null for a key to clear that override."""
+    excess_total_ils_override: Decimal | None = None
+    retainer_charged_override: Decimal | None = None
+    expenses_total_override: Decimal | None = None
+    fees_by_stages_override: Decimal | None = None
+    excess_remaining_override: Decimal | None = None
+    fee_diff_override: Decimal | None = None
 
 
 # Allowed procedure_stage_override codes (FeeEventType values)

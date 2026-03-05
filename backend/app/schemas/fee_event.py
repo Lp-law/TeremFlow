@@ -37,6 +37,11 @@ class StageBillingAdjustment(BaseModel):
     reason: str = ""
 
 
+class FeeEventDeleteRequest(BaseModel):
+    """Required body for soft-deleting a fee event (reason stored for analytics)."""
+    delete_reason: str = Field(..., min_length=1, max_length=500)
+
+
 class StageBillingCreate(BaseModel):
     event_date: dt.date
     codes: list[str] = Field(..., min_length=1)  # Performed-to-date (full set); only new codes are charged

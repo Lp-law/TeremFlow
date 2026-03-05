@@ -20,6 +20,7 @@ from app.services import cases as case_service
 from app.services import expenses as expense_service
 from app.services import fees as fee_service
 from app.services import retainer as retainer_service
+from app.services.unified import get_unified_summary
 
 
 def _sanitize_filename_ref(ref: str) -> str:
@@ -49,15 +50,17 @@ def build_case_export_xlsx(db: Session, case_id: int) -> tuple[bytes, str]:
     Build XLSX workbook for one case. Returns (xlsx_bytes, suggested_filename).
     Read-only; no business logic or data changes.
     """
-    case = db.query(Case).filter(Case.id == case_id).first()
+    case = case_service.get_case_if_not_deleted(db, case_id)
     if not case:
         return (b"", "")
 
     overview = case_service.build_case_overview_summary(db, case_id)
+    unified = get_unified_summary(db, case)
     ledger = retainer_service.build_retainer_ledger(db, case_id=case_id)
-    fee_events = fee_service.list_fee_events(db, case_id)
+    fee_events = fee_service.list_fee_events(db, case_id, include_deleted=False)
+    fee_events_deleted = fee_service.list_fee_events(db, case_id, include_deleted=True)
+    deleted_only = [e for e in fee_events_deleted if getattr(e, "deleted_at", None) is not None]
     expenses_list = expense_service.list_expenses(db, case_id)
-    ded_summary = expense_service.get_deductible_summary(db, case)
 
     stages = case_service.get_latest_fee_stage_by_case_ids(db, [case.id])
     computed_stage = stages.get(case.id)
@@ -82,25 +85,26 @@ def build_case_export_xlsx(db: Session, case_id: int) -> tuple[bytes, str]:
     ws_case.append(["procedure_stage_effective", procedure_stage_effective])
     ws_case.append(["exported_at", exported_at])
 
-    # --- Sheet: Overview ---
+    # --- Sheet: Overview (unified model) ---
     ws_ov = wb.create_sheet("Overview")
     ws_ov.append(["field", "value"])
     if overview:
         ws_ov.append(["current_procedure_stage", overview.get("current_procedure_stage") or ""])
         fees = overview.get("fees") or {}
-        ws_ov.append(["total_fees_ils", _fmt_dec(fees.get("total_fees_ils"))])
-        ws_ov.append(["fees_due_ils", _fmt_dec(fees.get("fees_due_ils"))])
+        ws_ov.append(["retainer_charged_to_date_ils", _fmt_dec(fees.get("retainer_charged_to_date_ils"))])
+        ws_ov.append(["fees_by_stages_ils", _fmt_dec(fees.get("fees_by_stages_ils"))])
+        ws_ov.append(["fee_diff_ils", _fmt_dec(fees.get("fee_diff_ils"))])
         ws_ov.append(["last_fee_event_date", fees.get("last_fee_event_date") or ""])
         ws_ov.append(["last_fee_event_amount", _fmt_dec(fees.get("last_fee_event_amount"))])
         ret = overview.get("retainer") or {}
-        ws_ov.append(["current_credit_ils", _fmt_dec(ret.get("current_credit_ils"))])
+        ws_ov.append(["charged_months_count", ret.get("charged_months_count") if ret.get("charged_months_count") is not None else ""])
         ws_ov.append(["monthly_gross_ils", _fmt_dec(ret.get("monthly_gross_ils"))])
+        ws_ov.append(["retainer_is_frozen", ret.get("retainer_is_frozen") if ret.get("retainer_is_frozen") is not None else ""])
+        ws_ov.append(["retainer_frozen_at", ret.get("retainer_frozen_at") or ""])
         exp = overview.get("expenses") or {}
         ws_ov.append(["total_expenses_ils", _fmt_dec(exp.get("total_expenses_ils"))])
-        ws_ov.append(["deductible_consumed_ils", _fmt_dec(exp.get("deductible_consumed_ils"))])
         ded = overview.get("deductible") or {}
-        ws_ov.append(["deductible_total_ils", _fmt_dec(ded.get("total_ils"))])
-        ws_ov.append(["deductible_remaining_ils", _fmt_dec(ded.get("remaining_ils"))])
+        ws_ov.append(["excess_total_ils", _fmt_dec(ded.get("excess_total_ils"))])
         ws_ov.append(["excess_remaining_ils", _fmt_dec(ded.get("excess_remaining_ils"))])
 
     # --- Sheet: Fees ---
@@ -127,6 +131,19 @@ def build_case_export_xlsx(db: Session, case_id: int) -> tuple[bytes, str]:
             _fmt_dec(bj.get("adjustment")),
             _fmt_dec(bj.get("final_delta_total") or bj.get("final_total")),
             e.created_at.isoformat() if e.created_at else "",
+        ])
+
+    # --- Sheet: Deleted Fee Events (analytics) ---
+    ws_del = wb.create_sheet("Deleted Fee Events")
+    ws_del.append(["event_id", "event_date", "event_type", "amount_ils_gross", "delete_reason", "deleted_at"])
+    for e in deleted_only:
+        ws_del.append([
+            str(e.id),
+            _fmt_date(e.event_date),
+            e.event_type.value if hasattr(e.event_type, "value") else str(e.event_type),
+            _fmt_dec(e.computed_amount_ils_gross),
+            getattr(e, "delete_reason", None) or "",
+            e.deleted_at.isoformat() if getattr(e, "deleted_at", None) else "",
         ])
 
     # --- Sheet: Retainer ---
@@ -165,13 +182,19 @@ def build_case_export_xlsx(db: Session, case_id: int) -> tuple[bytes, str]:
             ex.attachment_url or "",
         ])
 
-    # --- Sheet: Deductible ---
+    # --- Sheet: Deductible (unified) ---
     ws_ded = wb.create_sheet("Deductible")
     ws_ded.append(["field", "value"])
-    ws_ded.append(["deductible_total_ils", _fmt_dec(ded_summary.get("deductible_total_ils"))])
-    ws_ded.append(["deductible_consumed_ils", _fmt_dec(ded_summary.get("deductible_consumed_ils"))])
-    ws_ded.append(["deductible_remaining_ils", _fmt_dec(ded_summary.get("deductible_remaining_ils"))])
-    ws_ded.append(["excess_remaining_ils", _fmt_dec(ded_summary.get("excess_remaining_ils"))])
+    ws_ded.append(["excess_total_ils", _fmt_dec(unified.get("excess_total_ils"))])
+    ws_ded.append(["retainer_charged_to_date_ils", _fmt_dec(unified.get("retainer_charged_to_date_ils"))])
+    ws_ded.append(["expenses_total_ils", _fmt_dec(unified.get("expenses_total_ils"))])
+    ws_ded.append(["fees_by_stages_ils", _fmt_dec(unified.get("fees_by_stages_ils"))])
+    ws_ded.append(["excess_remaining_ils", _fmt_dec(unified.get("excess_remaining_ils"))])
+    ws_ded.append(["fee_diff_ils", _fmt_dec(unified.get("fee_diff_ils"))])
+    overrides = getattr(case, "manual_overrides_json", None) or {}
+    if overrides:
+        ws_ded.append(["", ""])
+        ws_ded.append(["manual_overrides", json.dumps(overrides, ensure_ascii=False)])
 
     # --- Sheet: Raw Import ---
     ws_raw = wb.create_sheet("Raw Import")

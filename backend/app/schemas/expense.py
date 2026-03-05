@@ -30,6 +30,11 @@ class ExpenseUpdate(BaseModel):
     attachment_url: str | None = None
 
 
+class ExpenseTotalUpdate(BaseModel):
+    """Case-level single editable expenses total (PATCH /cases/{id}/expenses/total)."""
+    expenses_total_ils_gross: Decimal = Field(ge=0)
+
+
 class ExpenseSummary(BaseModel):
     total_expenses_ils: Decimal
     deductible_consumed_by_expenses_ils: Decimal

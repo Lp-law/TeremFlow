@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from fastapi import HTTPException, status
@@ -119,8 +120,26 @@ def add_fee_event(db: Session, *, case_id: int, payload) -> FeeEvent:
     return e
 
 
-def list_fee_events(db: Session, case_id: int) -> list[FeeEvent]:
-    return db.query(FeeEvent).filter(FeeEvent.case_id == case_id).order_by(FeeEvent.event_date.desc(), FeeEvent.id.desc()).all()
+def list_fee_events(db: Session, case_id: int, *, include_deleted: bool = False) -> list[FeeEvent]:
+    q = db.query(FeeEvent).filter(FeeEvent.case_id == case_id)
+    if not include_deleted:
+        q = q.filter(FeeEvent.deleted_at.is_(None))
+    return q.order_by(FeeEvent.event_date.desc(), FeeEvent.id.desc()).all()
+
+
+def soft_delete_fee_event(db: Session, *, case_id: int, event_id: int, user_id: int, delete_reason: str) -> FeeEvent:
+    """Soft delete: set deleted_at, deleted_by_user_id, delete_reason. Excluded from totals and list."""
+    e = db.query(FeeEvent).filter(FeeEvent.id == event_id, FeeEvent.case_id == case_id).first()
+    if not e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Fee event not found")
+    if e.deleted_at is not None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Fee event already deleted")
+    e.deleted_at = datetime.now(timezone.utc)
+    e.deleted_by_user_id = user_id
+    e.delete_reason = (delete_reason or "").strip()[:500]
+    db.commit()
+    db.refresh(e)
+    return e
 
 
 def get_fee_stage_rates(db: Session) -> list[FeeStageRate]:
@@ -128,10 +147,14 @@ def get_fee_stage_rates(db: Session) -> list[FeeStageRate]:
 
 
 def get_billed_codes_for_case(db: Session, case_id: int) -> list[str]:
-    """Codes already billed in any STAGE_BILLING event (union of new_codes or legacy 'codes' per event)."""
+    """Codes already billed in any non-deleted STAGE_BILLING event."""
     events = (
         db.query(FeeEvent)
-        .filter(FeeEvent.case_id == case_id, FeeEvent.event_type == FeeEventType.STAGE_BILLING)
+        .filter(
+            FeeEvent.case_id == case_id,
+            FeeEvent.event_type == FeeEventType.STAGE_BILLING,
+            FeeEvent.deleted_at.is_(None),
+        )
         .all()
     )
     seen: set[str] = set()

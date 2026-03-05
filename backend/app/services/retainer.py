@@ -113,16 +113,19 @@ def ensure_accruals_up_to(
 
 def ensure_all_cases_accruals_up_to_now(db: Session) -> tuple[int, int]:
     """
-    Roll-forward: ensure all open cases have accruals up to current month.
-    - No snapshot: start from retainer_anchor_date.
-    - Snapshot + through_month: start from month after through_month.
-    - Snapshot without through_month: skip (backward compat).
+    Roll-forward: ensure all open non-deleted cases have accruals up to effective end (today or freeze date).
+    - Excludes soft-deleted cases.
+    - When case is frozen, up_to = retainer_frozen_at.
     Returns (cases_scanned, accruals_added).
-    Idempotent: ensure_accruals_up_to only creates missing months.
     """
+    from app.services.unified import get_effective_end_date
+
     logger = logging.getLogger(__name__)
-    today = dt.date.today()
-    open_cases = db.query(Case).filter(Case.status == CaseStatus.OPEN).all()
+    open_cases = (
+        db.query(Case)
+        .filter(Case.status == CaseStatus.OPEN, Case.deleted_at.is_(None))
+        .all()
+    )
     total_added = 0
     processed = 0
     for c in open_cases:
@@ -130,11 +133,12 @@ def ensure_all_cases_accruals_up_to_now(db: Session) -> tuple[int, int]:
             continue
         processed += 1
         snapshot_through = c.retainer_snapshot_through_month if c.retainer_snapshot_ils_gross else None
+        up_to = get_effective_end_date(c)
         created = ensure_accruals_up_to(
             db,
             case_id=c.id,
             retainer_anchor_date=c.retainer_anchor_date,
-            up_to=today,
+            up_to=up_to,
             snapshot_through_month=snapshot_through,
         )
         total_added += len(created)
@@ -215,14 +219,15 @@ def retainer_summary(db: Session, *, case_id: int) -> dict[str, Decimal]:
 
 def build_retainer_ledger(db: Session, *, case_id: int) -> dict:
     """
-    Build month-by-month ledger for display. Ensures accruals exist up to today.
-    Returns dict suitable for RetainerLedgerOut: config, anchor_date, snapshot_*, current_credit_ils, rows.
-    No business logic changes; uses existing accruals and allocation.
+    Build month-by-month ledger for display. Ensures accruals exist up to effective end (today or freeze date).
+    Returns dict suitable for RetainerLedgerOut. Returns None if case not found or deleted.
     """
+    from app.services.unified import get_effective_end_date
+
     case = db.query(Case).filter(Case.id == case_id).first()
-    if not case:
+    if not case or getattr(case, "deleted_at", None) is not None:
         return None
-    today = dt.date.today()
+    effective_end = get_effective_end_date(case)
     anchor = case.retainer_anchor_date
     snapshot_through = case.retainer_snapshot_through_month if case.retainer_snapshot_ils_gross else None
     snapshot_paid = q_ils(Decimal(str(case.retainer_snapshot_ils_gross or 0)))
@@ -230,17 +235,17 @@ def build_retainer_ledger(db: Session, *, case_id: int) -> dict:
         db,
         case_id=case_id,
         retainer_anchor_date=anchor,
-        up_to=today,
+        up_to=effective_end,
         snapshot_through_month=snapshot_through,
     )
     summary = retainer_summary(db, case_id=case_id)
     current_credit = summary["retainer_credit_balance_ils_gross"]
-    rate = vat_rate_for_month(today)
+    rate = vat_rate_for_month(effective_end)
     vat_pct = "18%" if rate >= Decimal("0.18") else "17%"
     config = {
         "monthly_base_net_ils": RETAINER_BASE_NET_ILS,
         "vat_pct": vat_pct,
-        "monthly_gross_ils": retainer_gross_for_month(today),
+        "monthly_gross_ils": retainer_gross_for_month(effective_end),
     }
     rows: list[dict] = []
     running = Decimal("0.00")

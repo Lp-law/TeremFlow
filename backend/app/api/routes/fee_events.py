@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import require_auth
 from app.db.session import get_db
-from app.schemas.fee_event import FeeEventCreate, FeeEventOut, StageBillingCreate
+from app.schemas.fee_event import FeeEventCreate, FeeEventDeleteRequest, FeeEventOut, StageBillingCreate
 from app.services import fees as fee_service
 
 router = APIRouter()
@@ -56,5 +56,29 @@ def add_fee_event(
     from app.services.activity_log import log_activity
     log_activity(db, action="fee_event_add", entity_type="fee_event", entity_id=e.id, user_id=user.id, details={"case_id": case_id})
     return _to_out(e)
+
+
+@router.delete("/{event_id}", status_code=204)
+def delete_fee_event(
+    case_id: int,
+    event_id: int,
+    payload: FeeEventDeleteRequest,
+    db: Session = Depends(get_db),
+    user=Depends(require_auth),
+):
+    """Soft delete fee event; reason required and stored for analytics. All users may delete."""
+    fee_service.soft_delete_fee_event(
+        db, case_id=case_id, event_id=event_id, user_id=user.id, delete_reason=payload.delete_reason
+    )
+    from app.services.activity_log import log_activity
+    log_activity(
+        db,
+        action="fee_event_delete",
+        entity_type="fee_event",
+        entity_id=event_id,
+        user_id=user.id,
+        details={"case_id": case_id, "reason": payload.delete_reason},
+    )
+    return None
 
 

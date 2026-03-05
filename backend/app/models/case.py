@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime as dt
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, DateTime, Enum, Integer, JSON, Numeric, String, Text, func
+from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Integer, JSON, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -51,6 +51,21 @@ class Case(Base):
     raw_import_fields_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # Manual procedure stage override (display only; does not affect fee events). One of FeeEventType code or null.
     procedure_stage_override: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
+
+    # Soft delete
+    deleted_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    deleted_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    delete_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    # Retainer freeze: when true, charged months and accruals stop at retainer_frozen_at
+    retainer_is_frozen: Mapped[bool] = mapped_column(Boolean, default=False)
+    retainer_frozen_at: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+
+    # Single editable expenses total (replaces itemized UX for normal use)
+    expenses_total_ils_gross: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+
+    # Manual overrides for deductible/overview (keys: excess_total_ils_override, retainer_charged_override, etc.)
+    manual_overrides_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

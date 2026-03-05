@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime as dt
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, Enum, ForeignKey, Integer, JSON, Numeric, func
+from sqlalchemy import Date, DateTime, Enum, ForeignKey, Integer, JSON, Numeric, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -31,6 +31,11 @@ class FeeEvent(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     # For event_type=STAGE_BILLING: full breakdown { codes, rates, base_total, adjustment, final_total }
     breakdown_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    # Soft delete (for analytics)
+    deleted_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    deleted_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    delete_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     case = relationship("Case", back_populates="fee_events")
 

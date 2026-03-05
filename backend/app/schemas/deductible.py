@@ -1,15 +1,19 @@
-"""Deductible / excess summary for case."""
+"""Deductible / excess summary for case (unified model)."""
 
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Any
 
 from pydantic import BaseModel
 
 
 class DeductibleSummaryOut(BaseModel):
-    deductible_total_ils: Decimal = Decimal("0.00")
-    deductible_consumed_ils: Decimal = Decimal("0.00")
-    deductible_remaining_ils: Decimal = Decimal("0.00")
-    excess_remaining_ils: Decimal | None = None
-    notes: dict = {"deductible_consumed_only_by_client_deductible_expenses": True}
+    """Unified deductible/excess summary; all values respect manual overrides."""
+    excess_total_ils: Decimal = Decimal("0.00")
+    retainer_charged_to_date_ils: Decimal = Decimal("0.00")
+    expenses_total_ils: Decimal = Decimal("0.00")
+    fees_by_stages_ils: Decimal = Decimal("0.00")
+    excess_remaining_ils: Decimal = Decimal("0.00")
+    fee_diff_ils: Decimal = Decimal("0.00")
+    manual_overrides: dict[str, Any] = {}
