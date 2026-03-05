@@ -66,6 +66,20 @@ export type ExpenseOut = {
   is_split_part: boolean
 }
 
+export type ExpenseSummary = {
+  total_expenses_ils: string | number
+  deductible_consumed_by_expenses_ils: string | number
+  other_expenses_ils: string | number
+}
+
+export type DeductibleSummary = {
+  deductible_total_ils: string | number
+  deductible_consumed_ils: string | number
+  deductible_remaining_ils: string | number
+  excess_remaining_ils: string | number | null
+  notes: { deductible_consumed_only_by_client_deductible_expenses?: boolean }
+}
+
 export type RetainerAccrual = {
   id: number
   accrual_month: string

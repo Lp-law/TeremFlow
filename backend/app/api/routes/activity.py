@@ -18,6 +18,8 @@ ACTION_LABELS = {
     "excel_import_update": "ייבוא מאקסל (עדכון)",
     "data_wipe": "מחיקת נתונים",
     "expense_add": "הוספת הוצאה",
+    "expense_update": "עדכון הוצאה",
+    "expense_delete": "מחיקת הוצאה",
     "fee_event_add": "הוספת אירוע שכ״ט",
     "retainer_payment_add": "הוספת תשלום ריטיינר",
     "backup_export": "יצירת גיבוי",

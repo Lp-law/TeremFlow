@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import require_auth
 from app.db.session import get_db
-from app.schemas.expense import ExpenseCreate, ExpenseOut
+from app.schemas.expense import ExpenseCreate, ExpenseOut, ExpenseSummary, ExpenseUpdate
 from app.services import expenses as expense_service
 
 router = APIRouter()
@@ -33,6 +33,11 @@ def list_expenses(case_id: int, db: Session = Depends(get_db), _=Depends(require
     return [_to_out(e) for e in items]
 
 
+@router.get("/summary", response_model=ExpenseSummary)
+def expenses_summary(case_id: int, db: Session = Depends(get_db), _=Depends(require_auth)):
+    return expense_service.get_expenses_summary(db, case_id)
+
+
 @router.post("/", response_model=list[ExpenseOut])
 def add_expense(
     case_id: int, payload: ExpenseCreate, db: Session = Depends(get_db), user=Depends(require_auth)
@@ -42,5 +47,32 @@ def add_expense(
     for e in created:
         log_activity(db, action="expense_add", entity_type="expense", entity_id=e.id, user_id=user.id, details={"case_id": case_id})
     return [_to_out(e) for e in created]
+
+
+@router.patch("/{expense_id}", response_model=ExpenseOut)
+def update_expense(
+    case_id: int,
+    expense_id: int,
+    payload: ExpenseUpdate,
+    db: Session = Depends(get_db),
+    user=Depends(require_auth),
+):
+    updated = expense_service.update_expense(db, case_id=case_id, expense_id=expense_id, payload=payload)
+    from app.services.activity_log import log_activity
+    log_activity(db, action="expense_update", entity_type="expense", entity_id=updated.id, user_id=user.id, details={"case_id": case_id})
+    return _to_out(updated)
+
+
+@router.delete("/{expense_id}", status_code=204)
+def delete_expense(
+    case_id: int,
+    expense_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(require_auth),
+):
+    expense_service.delete_expense(db, case_id=case_id, expense_id=expense_id)
+    from app.services.activity_log import log_activity
+    log_activity(db, action="expense_delete", entity_type="expense", entity_id=expense_id, user_id=user.id, details={"case_id": case_id})
+    return None
 
 

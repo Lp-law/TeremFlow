@@ -12,9 +12,11 @@ import {
 import { useUnsavedGuard } from '../lib/useUnsavedGuard'
 import type {
   CaseOut,
+  DeductibleSummary,
   ExpenseCategory,
   ExpenseOut,
   ExpensePayer,
+  ExpenseSummary,
   FeeEvent,
   RetainerLedger,
 } from '../lib/types'
@@ -26,6 +28,11 @@ const CATEGORY_LABEL: Record<ExpenseCategory, string> = {
   INVESTIGATOR: 'חוקר',
   FEES: 'אגרות',
   OTHER: 'אחר',
+}
+
+const PAYER_LABEL: Record<ExpensePayer, string> = {
+  CLIENT_DEDUCTIBLE: 'השתתפות עצמית',
+  INSURER: 'מבטח',
 }
 
 const CASE_TYPE_LABEL: Record<string, string> = {
@@ -55,7 +62,8 @@ export function CaseDetailsPage() {
   const { caseId } = useParams()
   const id = Number(caseId)
 
-  const [tab, setTab] = useState<'overview' | 'expenses' | 'retainer' | 'fees'>('overview')
+  const [tab, setTab] = useState<'overview' | 'expenses' | 'deductible' | 'retainer' | 'fees'>('overview')
+  const [expensesInitialPayerFilter, setExpensesInitialPayerFilter] = useState<ExpensePayer | ''>('')
   const [caseItem, setCaseItem] = useState<CaseOut | null>(null)
   const [expenses, setExpenses] = useState<ExpenseOut[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -141,7 +149,7 @@ export function CaseDetailsPage() {
                     onClick={() => setActiveModal('expense')}
                     className="btn btn-primary h-12 px-5 rounded-2xl"
                   >
-                    הוספת הוצאה חדשה
+                    הוסף הוצאה
                   </button>
                 ) : null}
               </div>
@@ -152,6 +160,9 @@ export function CaseDetailsPage() {
                 </TabButton>
                 <TabButton active={tab === 'expenses'} onClick={() => setTab('expenses')}>
                   הוצאות
+                </TabButton>
+                <TabButton active={tab === 'deductible'} onClick={() => setTab('deductible')}>
+                  השתתפות עצמית / אקסס
                 </TabButton>
                 <TabButton active={tab === 'retainer'} onClick={() => setTab('retainer')}>
                   ריטיינר
@@ -171,7 +182,23 @@ export function CaseDetailsPage() {
               ) : null}
 
               {tab === 'expenses' ? (
-                <ExpensesTab caseItem={caseItem} expenses={expenses} />
+                <ExpensesTab
+                  caseItem={caseItem}
+                  expenses={expenses}
+                  onReload={load}
+                  initialPayerFilter={expensesInitialPayerFilter || undefined}
+                  onConsumedInitialFilter={() => setExpensesInitialPayerFilter('')}
+                />
+              ) : null}
+
+              {tab === 'deductible' ? (
+                <DeductibleTab
+                  caseId={caseItem.id}
+                  onGoToExpensesWithDeductibleFilter={() => {
+                    setExpensesInitialPayerFilter('CLIENT_DEDUCTIBLE')
+                    setTab('expenses')
+                  }}
+                />
               ) : null}
 
               {tab === 'retainer' ? (
@@ -414,54 +441,373 @@ function ReadOnlyRow({ label, value }: { label: string; value: string }) {
   )
 }
 
-function ExpensesTab({ caseItem, expenses }: { caseItem: CaseOut; expenses: ExpenseOut[] }) {
-  const hasHistorical =
-    caseItem.expenses_snapshot_ils_gross != null && Number(caseItem.expenses_snapshot_ils_gross) > 0
+function DeductibleTab({
+  caseId,
+  onGoToExpensesWithDeductibleFilter,
+}: {
+  caseId: number
+  onGoToExpensesWithDeductibleFilter: () => void
+}) {
+  const [summary, setSummary] = useState<DeductibleSummary | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setError(null)
+    setSummary(null)
+    apiFetch<DeductibleSummary>(`/cases/${caseId}/deductible/summary`)
+      .then((s) => { if (!cancelled) setSummary(s) })
+      .catch((e: any) => { if (!cancelled) setError(e?.message || 'שגיאה') })
+      .finally(() => { if (!cancelled) setIsLoading(false) })
+    return () => { cancelled = true }
+  }, [caseId])
+
+  if (isLoading) return <div className="text-right text-sm text-muted">טוען...</div>
+  if (error) return <div className="text-right text-sm text-red-300">{error}</div>
+  if (!summary) return null
+
+  const hasExcess = summary.excess_remaining_ils != null
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead className="text-muted">
-          <tr className="border-b border-border/60">
-            <th className="text-right py-3">תאריך</th>
-            <th className="text-right py-3">תיאור</th>
-            <th className="text-right py-3">סכום (כולל מע״מ)</th>
-            <th className="text-right py-3">מקור</th>
-          </tr>
-        </thead>
-        <tbody>
-          {hasHistorical ? (
-            <tr className="border-b border-border/30 bg-muted/20">
-              <td className="py-3">—</td>
-              <td className="py-3">הוצאות עבר (ייבוא)</td>
-              <td className="py-3">{formatILS(caseItem.expenses_snapshot_ils_gross)}</td>
-              <td className="py-3">
-                <Badge label="עבר" variant="info" />
-              </td>
+    <div className="space-y-6">
+      <div className={`grid grid-cols-1 sm:grid-cols-3 gap-3 ${hasExcess ? 'sm:grid-cols-4' : ''}`}>
+        <div className="card-soft p-4">
+          <div className="text-xs text-muted mb-1">אקסס כולל</div>
+          <div className="font-semibold">{formatILS(summary.deductible_total_ils)}</div>
+        </div>
+        <div className="card-soft p-4">
+          <div className="text-xs text-muted mb-1">נצרך עד כה</div>
+          <div className="font-semibold">{formatILS(summary.deductible_consumed_ils)}</div>
+        </div>
+        <div className="card-soft p-4">
+          <div className="text-xs text-muted mb-1">יתרה</div>
+          <div className="font-semibold">{formatILS(summary.deductible_remaining_ils)}</div>
+        </div>
+        {hasExcess ? (
+          <div className="card-soft p-4">
+            <div className="text-xs text-muted mb-1">יתרת אקסס</div>
+            <div className="font-semibold">{formatILS(summary.excess_remaining_ils)}</div>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="card-soft p-4 bg-muted/20">
+        <p className="text-sm text-right text-muted leading-relaxed">
+          רק הוצאות שמסומנות &quot;השתתפות עצמית&quot; נוגסות באקסס. שכ״ט וריטיינר לא.
+        </p>
+      </div>
+
+      <div>
+        <button
+          type="button"
+          onClick={onGoToExpensesWithDeductibleFilter}
+          className="btn btn-secondary"
+        >
+          לכל ההוצאות
+        </button>
+        <span className="mr-2 text-sm text-muted">(יפתח את לשונית הוצאות עם מסנן השתתפות עצמית)</span>
+      </div>
+    </div>
+  )
+}
+
+function ExpensesTab({
+  caseItem,
+  expenses,
+  onReload,
+  initialPayerFilter,
+  onConsumedInitialFilter,
+}: {
+  caseItem: CaseOut
+  expenses: ExpenseOut[]
+  onReload: () => void | Promise<void>
+  initialPayerFilter?: ExpensePayer
+  onConsumedInitialFilter?: () => void
+}) {
+  const [summary, setSummary] = useState<ExpenseSummary | null>(null)
+  const [payerFilter, setPayerFilter] = useState<ExpensePayer | ''>(initialPayerFilter ?? '')
+  useEffect(() => {
+    if (initialPayerFilter && onConsumedInitialFilter) {
+      setPayerFilter(initialPayerFilter)
+      onConsumedInitialFilter()
+    }
+  }, [initialPayerFilter, onConsumedInitialFilter])
+  const [searchText, setSearchText] = useState('')
+  const [editingExpenseId, setEditingExpenseId] = useState<number | null>(null)
+  const [deletingId, setDeletingId] = useState<number | null>(null)
+
+  const caseId = caseItem.id
+  const hasSnapshot =
+    caseItem.expenses_snapshot_ils_gross != null && Number(caseItem.expenses_snapshot_ils_gross) > 0
+
+  useEffect(() => {
+    let cancelled = false
+    apiFetch<ExpenseSummary>(`/cases/${caseId}/expenses/summary`)
+      .then((s) => { if (!cancelled) setSummary(s) })
+      .catch(() => { if (!cancelled) setSummary(null) })
+    return () => { cancelled = true }
+  }, [caseId, expenses.length])
+
+  const filtered = useMemo(() => {
+    let list = expenses
+    if (payerFilter) list = list.filter((e) => e.payer === payerFilter)
+    if (searchText.trim()) {
+      const q = searchText.trim().toLowerCase()
+      list = list.filter(
+        (e) =>
+          (e.supplier_name || '').toLowerCase().includes(q) ||
+          (e.service_description || '').toLowerCase().includes(q)
+      )
+    }
+    return list
+  }, [expenses, payerFilter, searchText])
+
+  async function handleDelete(e: ExpenseOut) {
+    if (!window.confirm('למחוק הוצאה זו?')) return
+    setDeletingId(e.id)
+    try {
+      await apiFetch(`/cases/${caseId}/expenses/${e.id}`, { method: 'DELETE' })
+      await onReload()
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  const totalDisplay = summary ? formatILS(summary.total_expenses_ils) : '—'
+  const deductibleDisplay = summary ? formatILS(summary.deductible_consumed_by_expenses_ils) : '—'
+  const otherDisplay = summary ? formatILS(summary.other_expenses_ils) : '—'
+
+  return (
+    <div className="space-y-6">
+      {/* Summary cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="card-soft p-4">
+          <div className="text-xs text-muted mb-1">סה״כ הוצאות</div>
+          <div className="font-semibold">{totalDisplay}</div>
+        </div>
+        <div className="card-soft p-4">
+          <div className="text-xs text-muted mb-1">נוגס בהשתתפות עצמית</div>
+          <div className="font-semibold">{deductibleDisplay}</div>
+        </div>
+        <div className="card-soft p-4">
+          <div className="text-xs text-muted mb-1">הוצאות אחרות</div>
+          <div className="font-semibold">{otherDisplay}</div>
+        </div>
+      </div>
+
+      {/* Snapshot (read-only from import) */}
+      {hasSnapshot ? (
+        <div className="card-soft p-4 bg-muted/20">
+          <div className="text-sm text-right text-muted">
+            Snapshot הוצאות (מהייבוא): {formatILS(caseItem.expenses_snapshot_ils_gross)} ₪
+          </div>
+        </div>
+      ) : null}
+
+      {/* Filter chips + search */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm text-muted">מסנן:</span>
+        <button
+          type="button"
+          onClick={() => setPayerFilter('')}
+          className={`px-3 py-1.5 rounded-lg text-sm border ${!payerFilter ? 'bg-surface border-primary/60' : 'border-border/60'}`}
+        >
+          הכל
+        </button>
+        {(Object.keys(PAYER_LABEL) as ExpensePayer[]).map((p) => (
+          <button
+            key={p}
+            type="button"
+            onClick={() => setPayerFilter(payerFilter === p ? '' : p)}
+            className={`px-3 py-1.5 rounded-lg text-sm border ${payerFilter === p ? 'bg-surface border-primary/60' : 'border-border/60'}`}
+          >
+            {PAYER_LABEL[p]}
+          </button>
+        ))}
+        <input
+          type="text"
+          placeholder="חיפוש בתיאור..."
+          className="input max-w-[200px] py-1.5 text-sm"
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
+        />
+      </div>
+
+      {/* Table */}
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="text-muted">
+            <tr className="border-b border-border/60">
+              <th className="text-right py-3">תאריך</th>
+              <th className="text-right py-3">סכום (₪)</th>
+              <th className="text-right py-3">משלם</th>
+              <th className="text-right py-3">תיאור/הערה</th>
+              <th className="text-right py-3">פעולות</th>
             </tr>
-          ) : null}
-          {expenses.map((e) => (
-            <tr key={e.id} className="border-b border-border/30 hover:bg-surface/30">
-              <td className="py-3">{e.expense_date}</td>
-              <td className="py-3">
-                {e.supplier_name}
-                {e.service_description ? ` — ${e.service_description}` : ''}
-              </td>
-              <td className="py-3">{formatILS(e.amount_ils_gross)}</td>
-              <td className="py-3">
-                <Badge label="חדש" variant="success" />
-              </td>
-            </tr>
-          ))}
-          {!hasHistorical && expenses.length === 0 ? (
-            <tr>
-              <td colSpan={4} className="py-10 text-center text-muted">
-                אין הוצאות
-              </td>
-            </tr>
-          ) : null}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {filtered.map((e) => (
+              <tr key={e.id} className="border-b border-border/30 hover:bg-surface/30">
+                <td className="py-3">{e.expense_date}</td>
+                <td className="py-3">{formatILS(e.amount_ils_gross)}</td>
+                <td className="py-3">{PAYER_LABEL[e.payer]}</td>
+                <td className="py-3">
+                  {[e.supplier_name, e.service_description].filter(Boolean).join(' — ') || '—'}
+                </td>
+                <td className="py-3">
+                  <div className="flex gap-2 justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setEditingExpenseId(e.id)}
+                      className="text-primary hover:underline text-sm"
+                    >
+                      עריכה
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(e)}
+                      disabled={deletingId === e.id}
+                      className="text-red-400 hover:underline text-sm disabled:opacity-50"
+                    >
+                      {deletingId === e.id ? '...' : 'מחיקה'}
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {filtered.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="py-10 text-center text-muted">
+                  {expenses.length === 0 ? 'אין הוצאות' : 'אין תוצאות לפי המסנן'}
+                </td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
+
+      {editingExpenseId != null ? (
+        <EditExpenseModal
+          caseId={caseId}
+          expense={expenses.find((x) => x.id === editingExpenseId)!}
+          onClose={() => setEditingExpenseId(null)}
+          onSaved={async () => {
+            setEditingExpenseId(null)
+            await onReload()
+          }}
+        />
+      ) : null}
+    </div>
+  )
+}
+
+function EditExpenseModal({
+  caseId,
+  expense,
+  onClose,
+  onSaved,
+}: {
+  caseId: number
+  expense: ExpenseOut
+  onClose: () => void
+  onSaved: () => void | Promise<void>
+}) {
+  const [supplierName, setSupplierName] = useState(expense.supplier_name)
+  const [amount, setAmount] = useState(String(expense.amount_ils_gross))
+  const [serviceDescription, setServiceDescription] = useState(expense.service_description)
+  const [demandReceivedDate, setDemandReceivedDate] = useState(expense.demand_received_date)
+  const [expenseDate, setExpenseDate] = useState(expense.expense_date)
+  const [payer, setPayer] = useState<ExpensePayer>(expense.payer)
+  const [attachmentUrl, setAttachmentUrl] = useState(expense.attachment_url || '')
+
+  const [error, setError] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  function validate(): string | null {
+    if (!supplierName.trim()) return 'נא להזין שם ספק'
+    if (!amount.trim() || toNumber(amount) <= 0) return 'נא להזין סכום חיובי'
+    if (!serviceDescription.trim()) return 'נא להזין תיאור'
+    if (!expenseDate) return 'נא לבחור תאריך הוצאה'
+    return null
+  }
+
+  async function submit() {
+    const err = validate()
+    if (err) {
+      setError(err)
+      return
+    }
+    setError(null)
+    setIsSubmitting(true)
+    try {
+      await apiFetch(`/cases/${caseId}/expenses/${expense.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          supplier_name: supplierName.trim(),
+          amount_ils_gross: toNumber(amount),
+          service_description: serviceDescription.trim(),
+          demand_received_date: demandReceivedDate,
+          expense_date: expenseDate,
+          payer,
+          attachment_url: attachmentUrl.trim() || null,
+        }),
+      })
+      await onSaved()
+    } catch (e: any) {
+      setError(e?.message || 'שגיאה')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="modal">
+      <div className="modal-overlay" />
+      <div className="modal-panel max-w-[640px]">
+        <div className="text-right">
+          <div className="text-lg font-semibold">עריכת הוצאה</div>
+          <div className="text-sm text-muted mt-1">קטגוריה: {CATEGORY_LABEL[expense.category]}</div>
+        </div>
+
+        <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Field label="שם הספק">
+            <input className="input" value={supplierName} onChange={(e) => setSupplierName(e.target.value)} />
+          </Field>
+          <Field label='הסכום כולל מע"מ'>
+            <input className="input" value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" />
+          </Field>
+          <Field label="השירות שניתן" className="md:col-span-2">
+            <textarea className="input h-24 py-3" value={serviceDescription} onChange={(e) => setServiceDescription(e.target.value)} />
+          </Field>
+          <Field label="מועד מסירת דרישת התשלום לטר״מ">
+            <input className="input" type="date" value={demandReceivedDate} onChange={(e) => setDemandReceivedDate(e.target.value)} />
+          </Field>
+          <Field label="תאריך הוצאה">
+            <input className="input" type="date" value={expenseDate} onChange={(e) => setExpenseDate(e.target.value)} />
+          </Field>
+          <Field label="משלם">
+            <select className="input" value={payer} onChange={(e) => setPayer(e.target.value as ExpensePayer)}>
+              <option value="CLIENT_DEDUCTIBLE">השתתפות עצמית</option>
+              <option value="INSURER">מבטח</option>
+            </select>
+          </Field>
+          <Field label="קישור לקובץ/תיעוד (אופציונלי)" className="md:col-span-2">
+            <input className="input" value={attachmentUrl} onChange={(e) => setAttachmentUrl(e.target.value)} placeholder="https://..." dir="ltr" />
+          </Field>
+        </div>
+
+        {error ? <div className="mt-4 text-sm text-red-300 text-right">{error}</div> : null}
+
+        <div className="mt-6 flex gap-3 justify-end">
+          <button type="button" onClick={onClose} className="btn btn-secondary h-12 px-5 rounded-2xl" disabled={isSubmitting}>
+            ביטול
+          </button>
+          <button type="button" onClick={submit} disabled={isSubmitting} className="btn btn-primary h-12 px-6 rounded-2xl">
+            שמירה
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -515,20 +861,34 @@ function AddExpenseModal({ caseId, onClose, onSaved }: { caseId: number; onClose
     onClose()
   }
 
+  function validate(): string | null {
+    if (!supplierName.trim()) return 'נא להזין שם ספק'
+    if (!amount.trim() || toNumber(amount) <= 0) return 'נא להזין סכום חיובי'
+    if (!serviceDescription.trim()) return 'נא להזין תיאור'
+    if (!expenseDate) return 'נא לבחור תאריך הוצאה'
+    if (payer !== 'CLIENT_DEDUCTIBLE' && payer !== 'INSURER') return 'נא לבחור משלם (השתתפות עצמית או מבטח)'
+    return null
+  }
+
   async function submit() {
+    const err = validate()
+    if (err) {
+      setError(err)
+      return
+    }
     setError(null)
     setIsSubmitting(true)
     try {
       const payload: any = {
-        supplier_name: supplierName,
-        amount_ils_gross: Number(amount),
-        service_description: serviceDescription,
+        supplier_name: supplierName.trim(),
+        amount_ils_gross: toNumber(amount),
+        service_description: serviceDescription.trim(),
         demand_received_date: demandReceivedDate,
         expense_date: expenseDate,
         category,
-        attachment_url: attachmentUrl || null,
+        payer: payer as ExpensePayer,
+        attachment_url: attachmentUrl.trim() || null,
       }
-      if (payer) payload.payer = payer
       await apiFetch(`/cases/${caseId}/expenses/`, { method: 'POST', body: JSON.stringify(payload) })
       onSaved()
     } catch (e: any) {
@@ -575,11 +935,11 @@ function AddExpenseModal({ caseId, onClose, onSaved }: { caseId: number; onClose
               ))}
             </select>
           </Field>
-          <Field label="משלם (אופציונלי)">
-            <select className="input" value={payer} onChange={(e) => setPayer(e.target.value as any)}>
-              <option value="">אוטומטי לפי יתרת השתתפות עצמית</option>
+          <Field label="משלם">
+            <select className="input" value={payer} onChange={(e) => setPayer(e.target.value as ExpensePayer | '')}>
+              <option value="">בחר משלם</option>
               <option value="CLIENT_DEDUCTIBLE">השתתפות עצמית</option>
-              <option value="INSURER">המבטח</option>
+              <option value="INSURER">מבטח</option>
             </select>
           </Field>
 

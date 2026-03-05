@@ -67,8 +67,71 @@ def get_case_excess_remaining(db: Session, case: Case) -> Decimal:
     return max(Decimal("0.00"), remaining)
 
 
+def get_deductible_summary(db: Session, case: Case) -> dict:
+    """
+    Build deductible/excess summary for GET /cases/{id}/deductible/summary.
+    Fast; no fee events. Uses existing get_case_deductible_remaining and get_case_excess_remaining.
+    """
+    total = q_ils(Decimal(str(case.deductible_ils_gross or 0)))
+    consumed = _consumed_on_deductible(db, case.id)
+    remaining = get_case_deductible_remaining(db, case)
+    excess = get_case_excess_remaining(db, case)
+    return {
+        "deductible_total_ils": total,
+        "deductible_consumed_ils": consumed,
+        "deductible_remaining_ils": remaining,
+        "excess_remaining_ils": excess,
+        "notes": {"deductible_consumed_only_by_client_deductible_expenses": True},
+    }
+
+
 def list_expenses(db: Session, case_id: int) -> list[Expense]:
     return db.query(Expense).filter(Expense.case_id == case_id).order_by(Expense.expense_date.desc(), Expense.id.desc()).all()
+
+
+def get_expenses_summary(db: Session, case_id: int) -> dict:
+    """Total, deductible-consuming (CLIENT_DEDUCTIBLE), and other (INSURER) sums."""
+    items = db.query(Expense).filter(Expense.case_id == case_id).all()
+    total = sum(Decimal(str(e.amount_ils_gross)) for e in items)
+    deductible = sum(Decimal(str(e.amount_ils_gross)) for e in items if e.payer == ExpensePayer.CLIENT_DEDUCTIBLE)
+    other = total - deductible
+    return {
+        "total_expenses_ils": q_ils(total),
+        "deductible_consumed_by_expenses_ils": q_ils(deductible),
+        "other_expenses_ils": q_ils(other),
+    }
+
+
+def update_expense(db: Session, *, case_id: int, expense_id: int, payload) -> Expense:
+    """Update a single expense. No re-split; deductible remains sum(CLIENT_DEDUCTIBLE)."""
+    e = db.query(Expense).filter(Expense.case_id == case_id, Expense.id == expense_id).first()
+    if not e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Expense not found")
+    if payload.expense_date is not None:
+        e.expense_date = payload.expense_date
+    if payload.amount_ils_gross is not None:
+        e.amount_ils_gross = q_ils(Decimal(str(payload.amount_ils_gross)))
+    if payload.payer is not None:
+        e.payer = payload.payer
+    if payload.supplier_name is not None:
+        e.supplier_name = payload.supplier_name
+    if payload.service_description is not None:
+        e.service_description = payload.service_description
+    if payload.demand_received_date is not None:
+        e.demand_received_date = payload.demand_received_date
+    if payload.attachment_url is not None:
+        e.attachment_url = payload.attachment_url
+    db.commit()
+    db.refresh(e)
+    return e
+
+
+def delete_expense(db: Session, *, case_id: int, expense_id: int) -> None:
+    e = db.query(Expense).filter(Expense.case_id == case_id, Expense.id == expense_id).first()
+    if not e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Expense not found")
+    db.delete(e)
+    db.commit()
 
 
 def add_expense(db: Session, *, case_id: int, payload) -> list[Expense]:

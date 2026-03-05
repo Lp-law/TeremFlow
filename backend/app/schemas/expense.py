@@ -19,6 +19,23 @@ class ExpenseCreate(BaseModel):
     attachment_url: str | None = None
 
 
+class ExpenseUpdate(BaseModel):
+    """Partial update for expense. Only provided fields are updated."""
+    expense_date: dt.date | None = None
+    amount_ils_gross: Decimal | None = Field(default=None, gt=0)
+    payer: ExpensePayer | None = None
+    supplier_name: str | None = Field(default=None, min_length=2, max_length=120)
+    service_description: str | None = Field(default=None, min_length=1)
+    demand_received_date: dt.date | None = None
+    attachment_url: str | None = None
+
+
+class ExpenseSummary(BaseModel):
+    total_expenses_ils: Decimal
+    deductible_consumed_by_expenses_ils: Decimal
+    other_expenses_ils: Decimal
+
+
 class ExpenseOut(BaseModel):
     id: int
     case_id: int
