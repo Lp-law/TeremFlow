@@ -49,6 +49,8 @@ class Case(Base):
     performed_fee_stage_codes: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     # Raw Excel columns not mapped to operational fields (display-only; not used in calculations).
     raw_import_fields_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Manual procedure stage override (display only; does not affect fee events). One of FeeEventType code or null.
+    procedure_stage_override: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
 
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

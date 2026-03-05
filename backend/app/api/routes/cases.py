@@ -8,7 +8,7 @@ from fastapi import HTTPException, status
 from app.api.deps import require_auth
 from app.db.session import get_db
 from app.models.case import Case
-from app.schemas.case import CaseCreate, CaseOut, CaseUpdateStatus
+from app.schemas.case import CaseBulkUpdateRequest, CaseBulkUpdateResponse, CaseCreate, CaseOut, CaseUpdateStatus
 from app.schemas.case_overview import CaseOverviewSummaryOut
 from app.services import cases as case_service
 
@@ -39,7 +39,8 @@ def get_case(case_id: int, db: Session = Depends(get_db), _=Depends(require_auth
     c = db.query(Case).filter(Case.id == case_id).first()
     if not c:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
-    return CaseOut(**case_service.to_case_out(db, c))
+    stages = case_service.get_latest_fee_stage_by_case_ids(db, [c.id])
+    return CaseOut(**case_service.to_case_out(db, c, current_procedure_stage=stages.get(c.id)))
 
 
 @router.post("/", response_model=CaseOut)
@@ -50,6 +51,28 @@ def create_case(
     from app.services.activity_log import log_activity
     log_activity(db, action="case_create", entity_type="case", entity_id=c.id, user_id=user.id)
     return CaseOut(**case_service.to_case_out(db, c))
+
+
+@router.patch("/bulk-update", response_model=CaseBulkUpdateResponse)
+def bulk_update_cases(
+    payload: CaseBulkUpdateRequest,
+    db: Session = Depends(get_db),
+    user=Depends(require_auth),
+):
+    if payload.updates.is_empty():
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="At least one field in updates must be provided")
+    updated_count = case_service.bulk_update_cases(db, payload.case_ids, payload.updates)
+    from app.services.activity_log import log_activity
+    log_activity(
+        db,
+        action="cases_bulk_update",
+        entity_type="case",
+        entity_id=0,
+        user_id=user.id,
+        details={"updated_count": updated_count, "fields": list(payload.updates.model_dump(exclude_unset=True).keys())},
+    )
+    return CaseBulkUpdateResponse(updated_count=updated_count)
 
 
 @router.patch("/{case_id}/status", response_model=CaseOut)

@@ -7,7 +7,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.models.case import Case
-from app.models.enums import CaseStatus
+from app.models.enums import CaseStatus, CaseType
 from app.services.boi_fx import FxLookupError, get_usd_ils_rate
 from app.services.expenses import get_case_excess_remaining
 from app.services.retainer import ensure_accruals_up_to, get_retainer_anchor_date
@@ -254,10 +254,18 @@ def get_latest_fee_stage_by_case_ids(db: Session, case_ids: list[int]) -> dict[i
     return result
 
 
+def _effective_procedure_stage(case: Case, computed_stage: str | None) -> str | None:
+    """Override takes precedence; else computed from fee events."""
+    if case.procedure_stage_override and str(case.procedure_stage_override).strip():
+        return str(case.procedure_stage_override).strip()
+    return computed_stage
+
+
 def to_case_out(
     db: Session, case: Case, *, current_procedure_stage: str | None = None
 ) -> dict:
     excess = get_case_excess_remaining(db, case)
+    effective_stage = _effective_procedure_stage(case, current_procedure_stage)
     out = {
         "id": case.id,
         "case_reference": case.case_reference,
@@ -267,7 +275,8 @@ def to_case_out(
         "open_date": case.open_date,
         "retainer_anchor_date": case.retainer_anchor_date,
         "branch_name": case.branch_name,
-        "current_procedure_stage": current_procedure_stage,
+        "current_procedure_stage": effective_stage,
+        "procedure_stage_override": getattr(case, "procedure_stage_override", None),
         "deductible_usd": case.deductible_usd,
         "fx_rate_usd_ils": case.fx_rate_usd_ils,
         "fx_date_used": case.fx_date_used,
@@ -303,7 +312,8 @@ def build_case_overview_summary(db: Session, case_id: int) -> dict | None:
         return None
 
     stages = get_latest_fee_stage_by_case_ids(db, [case.id])
-    current_stage = stages.get(case.id)
+    computed_stage = stages.get(case.id)
+    current_stage = _effective_procedure_stage(case, computed_stage)
 
     # Fees: sum from fee events; last event
     fee_events = (
@@ -353,5 +363,41 @@ def build_case_overview_summary(db: Session, case_id: int) -> dict | None:
             "excess_remaining_ils": ded_summary["excess_remaining_ils"],
         },
     }
+
+
+def bulk_update_cases(db: Session, case_ids: list[int], updates) -> int:
+    """
+    Update multiple cases. Only fields set on updates (exclude_unset) are applied.
+    procedure_stage_override: must be one of PROCEDURE_STAGE_OVERRIDE_CODES or None to clear.
+    """
+    from app.schemas.case import CaseBulkUpdateUpdates, PROCEDURE_STAGE_OVERRIDE_CODES
+
+    if not isinstance(updates, CaseBulkUpdateUpdates):
+        raise ValueError("updates must be CaseBulkUpdateUpdates")
+    data = updates.model_dump(exclude_unset=True)
+    if not data:
+        return 0
+
+    if "procedure_stage_override" in data:
+        val = data["procedure_stage_override"]
+        if val is not None and str(val).strip():
+            if str(val).strip() not in PROCEDURE_STAGE_OVERRIDE_CODES:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"procedure_stage_override must be one of {sorted(PROCEDURE_STAGE_OVERRIDE_CODES)} or null",
+                )
+        else:
+            data["procedure_stage_override"] = None
+
+    cases = db.query(Case).filter(Case.id.in_(case_ids)).all()
+    for c in cases:
+        if "status" in data:
+            c.status = CaseStatus(data["status"])
+        if "case_type" in data:
+            c.case_type = CaseType(data["case_type"])
+        if "procedure_stage_override" in data:
+            c.procedure_stage_override = data["procedure_stage_override"]
+    db.commit()
+    return len(cases)
 
 

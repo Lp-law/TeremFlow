@@ -20,6 +20,7 @@ ACTION_LABELS = {
     "expense_add": "הוספת הוצאה",
     "expense_update": "עדכון הוצאה",
     "expense_delete": "מחיקת הוצאה",
+    "cases_bulk_update": "עדכון מרובה תיקים",
     "fee_event_add": "הוספת אירוע שכ״ט",
     "retainer_payment_add": "הוספת תשלום ריטיינר",
     "backup_export": "יצירת גיבוי",

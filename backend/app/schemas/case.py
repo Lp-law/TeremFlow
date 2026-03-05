@@ -37,8 +37,9 @@ class CaseOut(BaseModel):
     open_date: dt.date
     retainer_anchor_date: dt.date
     branch_name: str | None
-    # Latest fee event type (procedure stage) for list UX; set only in list endpoint.
+    # Latest fee event type (procedure stage) for list UX; override takes precedence over computed.
     current_procedure_stage: str | None = None
+    procedure_stage_override: str | None = None  # manual override; null = use computed from fee events
 
     deductible_usd: Decimal | None
     fx_rate_usd_ils: Decimal | None
@@ -61,5 +62,33 @@ class CaseOut(BaseModel):
 
 class CaseUpdateStatus(BaseModel):
     status: CaseStatus
+
+
+# Allowed procedure_stage_override codes (FeeEventType values)
+PROCEDURE_STAGE_OVERRIDE_CODES = frozenset({
+    "COURT_STAGE_1_DEFENSE", "COURT_STAGE_2_DAMAGES", "COURT_STAGE_3_EVIDENCE",
+    "COURT_STAGE_4_PROOFS", "COURT_STAGE_5_SUMMARIES",
+    "AMENDED_DEFENSE_PARTIAL", "AMENDED_DEFENSE_FULL", "THIRD_PARTY_NOTICE",
+    "ADDITIONAL_PROOF_HEARING", "DEMAND_FIX", "DEMAND_HOURLY", "SMALL_CLAIMS_MANUAL",
+    "APPEAL", "STAGE_BILLING",
+})
+
+
+class CaseBulkUpdateUpdates(BaseModel):
+    status: CaseStatus | None = None
+    case_type: CaseType | None = None
+    procedure_stage_override: str | None = None  # one of PROCEDURE_STAGE_OVERRIDE_CODES or null to clear
+
+    def is_empty(self) -> bool:
+        return not self.model_dump(exclude_unset=True)
+
+
+class CaseBulkUpdateRequest(BaseModel):
+    case_ids: list[int]
+    updates: CaseBulkUpdateUpdates
+
+
+class CaseBulkUpdateResponse(BaseModel):
+    updated_count: int
 
 
