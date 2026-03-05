@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { BackButton } from '../components/BackButton'
 import { apiFetch } from '../lib/api'
 import { downloadTextFile, toCsv } from '../lib/csv'
-import type { CaseOut, CaseType } from '../lib/types'
+import type { CaseOut, CaseStatus, CaseType } from '../lib/types'
 
 /** Labels for current_procedure_stage (fee event type) in list table. */
 const PROCEDURE_STAGE_LABEL: Record<string, string> = {

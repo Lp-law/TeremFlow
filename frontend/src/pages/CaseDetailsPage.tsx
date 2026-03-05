@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom'
 import { BackButton } from '../components/BackButton'
 import { apiDownload, apiFetch } from '../lib/api'
 import { Badge } from '../components/Badge'
-import { formatILS, formatDateYMD, isOverdue, toNumber } from '../lib/format'
+import { formatILS, formatDateYMD, toNumber } from '../lib/format'
 import {
   RAW_GROUP_ORDER,
   formatRawValue,
