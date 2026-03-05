@@ -239,4 +239,78 @@ export type AnalyticsOverviewResponse = {
   yearly: TimeSeriesPoint[]
 }
 
+/** Analytics v2: case-based filters, unified KPIs */
+export type AnalyticsV2Filters = {
+  start_date: string
+  end_date: string
+  case_type: string
+  status: string
+  branch_name: string
+  denominator_cases: number
+}
+
+export type AnalyticsV2KPIs = {
+  avg_stage_fee_ils: string | number
+  avg_retainer_fee_ils: string | number
+  avg_expenses_ils: string | number
+}
+
+export type ClosingStageRow = {
+  code: string
+  label: string
+  count: number
+  pct: number
+}
+
+export type BranchCaseTypeRow = {
+  branch_name: string | null
+  case_type: string
+  count: number
+}
+
+export type ByBranchRow = { branch_name: string | null; count: number }
+export type ByCaseTypeRow = { case_type: string; count: number }
+
+/** Average closing stage index (COURT, CLOSED, stages 1-5 only) */
+export type ClosingStageIndexRow = { stage: number; count: number; pct: number }
+
+export type ExtraMetrics = {
+  avg_closing_stage_index: number
+  closing_stage_index_denominator_cases: number
+  closing_stage_index_distribution: ClosingStageIndexRow[]
+}
+
+export type BranchFeeAverageRow = {
+  branch_name: string
+  cases_count: number
+  avg_stage_fee_ils: string | number
+  avg_retainer_fee_ils: string | number
+  avg_expenses_ils: string | number
+}
+
+export type BranchCaseTypeFeeAverageRow = {
+  branch_name: string
+  case_type: string
+  cases_count: number
+  avg_stage_fee_ils: string | number
+  avg_retainer_fee_ils: string | number
+  avg_expenses_ils: string | number
+}
+
+export type AnalyticsV2Response = {
+  filters: AnalyticsV2Filters
+  kpis: AnalyticsV2KPIs
+  distributions: {
+    closing_stage: ClosingStageRow[]
+    branch_case_type: BranchCaseTypeRow[]
+  }
+  totals: {
+    by_branch: ByBranchRow[]
+    by_case_type: ByCaseTypeRow[]
+  }
+  extra_metrics?: ExtraMetrics | null
+  branch_fee_averages?: BranchFeeAverageRow[]
+  branch_case_type_fee_averages?: BranchCaseTypeFeeAverageRow[]
+}
+
 
