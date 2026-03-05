@@ -80,6 +80,33 @@ export type DeductibleSummary = {
   notes: { deductible_consumed_only_by_client_deductible_expenses?: boolean }
 }
 
+export type CaseOverviewSummary = {
+  case_reference: string
+  case_name: string | null
+  branch_name: string | null
+  status: string
+  current_procedure_stage: string | null
+  fees: {
+    total_fees_ils: string | number
+    fees_due_ils: string | number
+    last_fee_event_date: string | null
+    last_fee_event_amount: string | number | null
+  }
+  retainer: {
+    current_credit_ils: string | number
+    monthly_gross_ils: string | number
+  }
+  expenses: {
+    total_expenses_ils: string | number
+    deductible_consumed_ils: string | number
+  }
+  deductible: {
+    total_ils: string | number
+    remaining_ils: string | number
+    excess_remaining_ils: string | number | null
+  }
+}
+
 export type RetainerAccrual = {
   id: number
   accrual_month: string

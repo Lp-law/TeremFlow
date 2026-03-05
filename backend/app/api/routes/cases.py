@@ -3,10 +3,13 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from fastapi import HTTPException, status
+
 from app.api.deps import require_auth
 from app.db.session import get_db
-from app.schemas.case import CaseCreate, CaseOut, CaseUpdateStatus
 from app.models.case import Case
+from app.schemas.case import CaseCreate, CaseOut, CaseUpdateStatus
+from app.schemas.case_overview import CaseOverviewSummaryOut
 from app.services import cases as case_service
 
 router = APIRouter()
@@ -23,12 +26,18 @@ def list_cases(db: Session = Depends(get_db), _=Depends(require_auth)):
     ]
 
 
+@router.get("/{case_id}/overview-summary", response_model=CaseOverviewSummaryOut)
+def get_case_overview_summary(case_id: int, db: Session = Depends(get_db), _=Depends(require_auth)):
+    data = case_service.build_case_overview_summary(db, case_id)
+    if data is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+    return CaseOverviewSummaryOut(**data)
+
+
 @router.get("/{case_id}", response_model=CaseOut)
 def get_case(case_id: int, db: Session = Depends(get_db), _=Depends(require_auth)):
     c = db.query(Case).filter(Case.id == case_id).first()
     if not c:
-        from fastapi import HTTPException, status
-
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
     return CaseOut(**case_service.to_case_out(db, c))
 

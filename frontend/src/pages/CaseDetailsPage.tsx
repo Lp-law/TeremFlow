@@ -12,6 +12,7 @@ import {
 import { useUnsavedGuard } from '../lib/useUnsavedGuard'
 import type {
   CaseOut,
+  CaseOverviewSummary,
   DeductibleSummary,
   ExpenseCategory,
   ExpenseOut,
@@ -56,6 +57,22 @@ const FEE_EVENT_LABEL: Record<string, string> = {
   SMALL_CLAIMS_MANUAL: 'תביעות קטנות — ידני',
   APPEAL: 'ערעור',
   STAGE_BILLING: 'חיוב לפי שלבים',
+}
+
+/** Format current_procedure_stage from API (code, code(+k), or STAGE_BILLING:0) for display */
+function formatProcedureStage(stage: string | null | undefined): string {
+  if (!stage) return 'לא הוגדר'
+  const plusMatch = stage.match(/^(.+)\(\+(\d+)\)$/)
+  if (plusMatch) {
+    const [, code, k] = plusMatch
+    const label = FEE_EVENT_LABEL[code ?? ''] ?? (code ?? '')
+    return k === '0' ? label : `${label} (+${k})`
+  }
+  if (stage.startsWith('STAGE_BILLING:')) {
+    const n = stage.slice('STAGE_BILLING:'.length)
+    return `חיוב לפי שלבים (${n})`
+  }
+  return FEE_EVENT_LABEL[stage] ?? stage
 }
 
 export function CaseDetailsPage() {
@@ -176,8 +193,10 @@ export function CaseDetailsPage() {
             <div className="mt-4 card p-6">
               {tab === 'overview' ? (
                 <OverviewTab
+                  caseId={caseItem.id}
                   caseItem={caseItem}
                   currentLegalStage={currentLegalStage}
+                  setTab={setTab}
                 />
               ) : null}
 
@@ -258,9 +277,110 @@ export function CaseDetailsPage() {
   )
 }
 
-function OverviewTab({ caseItem, currentLegalStage }: { caseItem: CaseOut; currentLegalStage: string | null }) {
+function OverviewTab({
+  caseId,
+  caseItem,
+  currentLegalStage,
+  setTab,
+}: {
+  caseId: number
+  caseItem: CaseOut
+  currentLegalStage: string | null
+  setTab: (tab: 'overview' | 'expenses' | 'deductible' | 'retainer' | 'fees') => void
+}) {
+  const [overview, setOverview] = useState<CaseOverviewSummary | null>(null)
+  const [overviewLoading, setOverviewLoading] = useState(true)
+  const [overviewError, setOverviewError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setOverviewLoading(true)
+    setOverviewError(null)
+    apiFetch<CaseOverviewSummary>(`/cases/${caseId}/overview-summary`)
+      .then((d) => { if (!cancelled) setOverview(d) })
+      .catch((e: any) => { if (!cancelled) setOverviewError(e?.message || 'שגיאה') })
+      .finally(() => { if (!cancelled) setOverviewLoading(false) })
+    return () => { cancelled = true }
+  }, [caseId])
+
+  const stageLabel = overview?.current_procedure_stage != null
+    ? formatProcedureStage(overview.current_procedure_stage)
+    : (currentLegalStage ?? 'לא הוגדר')
+
   return (
     <div className="text-right space-y-8">
+      {/* Case Overview Summary — key state in ~10 seconds */}
+      <section>
+        <h3 className="text-sm font-semibold text-muted mb-3">סיכום תיק</h3>
+        {overviewLoading ? (
+          <div className="text-sm text-muted py-4">טוען סיכום...</div>
+        ) : overviewError ? (
+          <div className="text-sm text-amber-600 py-4">לא ניתן לטעון סיכום. נתוני התיק למטה.</div>
+        ) : overview ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {/* Procedure stage */}
+            <div className="card-soft p-4">
+              <div className="text-xs text-muted mb-1">שלב הליך נוכחי</div>
+              <div className="font-semibold">{stageLabel}</div>
+              <div className="text-xs text-muted mt-1">סטטוס: {overview.status === 'OPEN' ? 'פתוח' : 'סגור'}</div>
+              <button type="button" onClick={() => setTab('fees')} className="btn btn-secondary btn-sm mt-3">
+                לשלבי שכ״ט
+              </button>
+            </div>
+
+            {/* Fees */}
+            <div className="card-soft p-4">
+              <div className="text-xs text-muted mb-1">שכ״ט מחויב (סה״כ)</div>
+              <div className="font-semibold">{formatILS(overview.fees.total_fees_ils)}</div>
+              <div className="text-xs text-muted mt-1">
+                שכ״ט לתשלום: {formatILS(overview.fees.fees_due_ils)}
+              </div>
+              {overview.fees.last_fee_event_date && overview.fees.last_fee_event_amount != null ? (
+                <div className="text-xs text-muted mt-0.5">
+                  אירוע חיוב אחרון: {overview.fees.last_fee_event_date} / {formatILS(overview.fees.last_fee_event_amount)}
+                </div>
+              ) : null}
+              <button type="button" onClick={() => setTab('fees')} className="btn btn-secondary btn-sm mt-3">
+                לשלבי שכ״ט
+              </button>
+            </div>
+
+            {/* Retainer */}
+            <div className="card-soft p-4">
+              <div className="text-xs text-muted mb-1">קרדיט ריטיינר נוכחי</div>
+              <div className="font-semibold">{formatILS(overview.retainer.current_credit_ils)}</div>
+              <div className="text-xs text-muted mt-1">ריטיינר חודשי: {formatILS(overview.retainer.monthly_gross_ils)}</div>
+              <button type="button" onClick={() => setTab('retainer')} className="btn btn-secondary btn-sm mt-3">
+                לריטיינר
+              </button>
+            </div>
+
+            {/* Expenses */}
+            <div className="card-soft p-4">
+              <div className="text-xs text-muted mb-1">סה״כ הוצאות</div>
+              <div className="font-semibold">{formatILS(overview.expenses.total_expenses_ils)}</div>
+              <div className="text-xs text-muted mt-1">נוגס בהשתתפות עצמית: {formatILS(overview.expenses.deductible_consumed_ils)}</div>
+              <button type="button" onClick={() => setTab('expenses')} className="btn btn-secondary btn-sm mt-3">
+                להוצאות
+              </button>
+            </div>
+
+            {/* Deductible / excess */}
+            <div className="card-soft p-4">
+              <div className="text-xs text-muted mb-1">אקסס כולל</div>
+              <div className="font-semibold">{formatILS(overview.deductible.total_ils)}</div>
+              <div className="text-xs text-muted mt-1">יתרה: {formatILS(overview.deductible.remaining_ils)}</div>
+              {overview.deductible.excess_remaining_ils != null ? (
+                <div className="text-xs text-muted mt-0.5">יתרת אקסס: {formatILS(overview.deductible.excess_remaining_ils)}</div>
+              ) : null}
+              <button type="button" onClick={() => setTab('deductible')} className="btn btn-secondary btn-sm mt-3">
+                להשתתפות עצמית
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </section>
+
       <section>
         <h3 className="text-sm font-semibold text-muted mb-3">זיהוי תיק</h3>
         <dl className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">

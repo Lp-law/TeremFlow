@@ -287,3 +287,71 @@ def to_case_out(
     return out
 
 
+def build_case_overview_summary(db: Session, case_id: int) -> dict | None:
+    """
+    Build aggregated overview for GET /cases/{id}/overview-summary.
+    Single DB session; reuses existing service functions. No billing formula changes.
+    """
+    import datetime as dt
+
+    from app.models.fee_event import FeeEvent
+    from app.services import expenses as expense_service
+    from app.services import retainer as retainer_service
+
+    case = db.query(Case).filter(Case.id == case_id).first()
+    if not case:
+        return None
+
+    stages = get_latest_fee_stage_by_case_ids(db, [case.id])
+    current_stage = stages.get(case.id)
+
+    # Fees: sum from fee events; last event
+    fee_events = (
+        db.query(FeeEvent)
+        .filter(FeeEvent.case_id == case_id)
+        .order_by(FeeEvent.event_date.desc(), FeeEvent.id.desc())
+        .all()
+    )
+    total_fees = sum(Decimal(str(e.computed_amount_ils_gross)) for e in fee_events)
+    fees_due = sum(Decimal(str(e.amount_due_cash_ils_gross)) for e in fee_events)
+    last_fee = fee_events[0] if fee_events else None
+    fees_overview = {
+        "total_fees_ils": q_ils(total_fees),
+        "fees_due_ils": q_ils(fees_due),
+        "last_fee_event_date": last_fee.event_date.isoformat() if last_fee else None,
+        "last_fee_event_amount": q_ils(Decimal(str(last_fee.computed_amount_ils_gross))) if last_fee else None,
+    }
+
+    # Retainer: credit from summary, monthly from retainer_gross_for_month(today)
+    r_summary = retainer_service.retainer_summary(db, case_id=case_id)
+    today = dt.date.today()
+    monthly = retainer_service.retainer_gross_for_month(today)
+    retainer_overview = {
+        "current_credit_ils": r_summary["retainer_credit_balance_ils_gross"],
+        "monthly_gross_ils": monthly,
+    }
+
+    # Expenses & deductible
+    exp_summary = expense_service.get_expenses_summary(db, case_id)
+    ded_summary = expense_service.get_deductible_summary(db, case)
+
+    return {
+        "case_reference": case.case_reference,
+        "case_name": case.case_name,
+        "branch_name": case.branch_name,
+        "status": case.status.value,
+        "current_procedure_stage": current_stage,
+        "fees": fees_overview,
+        "retainer": retainer_overview,
+        "expenses": {
+            "total_expenses_ils": exp_summary["total_expenses_ils"],
+            "deductible_consumed_ils": exp_summary["deductible_consumed_by_expenses_ils"],
+        },
+        "deductible": {
+            "total_ils": ded_summary["deductible_total_ils"],
+            "remaining_ils": ded_summary["deductible_remaining_ils"],
+            "excess_remaining_ils": ded_summary["excess_remaining_ils"],
+        },
+    }
+
+
