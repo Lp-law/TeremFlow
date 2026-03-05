@@ -19,6 +19,12 @@ class RetainerFreezeRequest(BaseModel):
     freeze: bool  # True = freeze, False = unfreeze
 
 
+class RetainerDatesUpdate(BaseModel):
+    """Update retainer_anchor_date and/or retainer_snapshot_through_month (YYYY-MM-01)."""
+    retainer_anchor_date: dt.date | None = None
+    retainer_snapshot_through_month: dt.date | None = None  # Normalized to first-of-month in service
+
+
 class RetainerPaymentCreate(BaseModel):
     payment_date: dt.date
     amount_ils_gross: Decimal = Field(gt=0)

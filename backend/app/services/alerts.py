@@ -13,7 +13,7 @@ from app.models.notification import AlertEvent, Notification
 from app.models.retainer import RetainerAccrual
 from app.services.deductible import q_ils
 from app.services.email import send_email
-from app.services.expenses import get_case_excess_remaining
+from app.services.unified import excess_remaining_ils as unified_excess_remaining_ils
 from app.services.retainer import ensure_all_cases_accruals_up_to_now
 
 
@@ -59,10 +59,14 @@ def run_daily_alerts(db: Session) -> dict:
         _mark_alert(db, type_=NotificationType.INSURER_STARTED_PAYING, key=key, case_id=c.id)
         sent += 1
 
-    # Excess near exhaustion (once per case) — Excel P = M - J
-    open_cases = db.query(Case).filter(Case.status == CaseStatus.OPEN).all()
+    # Excess near exhaustion (once per case) — unified excess_remaining_ils
+    open_cases = (
+        db.query(Case)
+        .filter(Case.status == CaseStatus.OPEN, Case.deleted_at.is_(None))
+        .all()
+    )
     for c in open_cases:
-        remaining = get_case_excess_remaining(db, c)
+        remaining = unified_excess_remaining_ils(db, c)
         pct_threshold = q_ils(Decimal(str(c.deductible_ils_gross)) * Decimal(str(settings.deductible_near_pct)))
         abs_threshold = q_ils(Decimal(str(settings.deductible_near_abs_ils)))
         is_near = remaining < pct_threshold or remaining < abs_threshold

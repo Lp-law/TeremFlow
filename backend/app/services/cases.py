@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime as dt
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
@@ -242,11 +243,48 @@ def set_retainer_freeze(db: Session, *, case_id: int, freeze: bool) -> Case:
     c = get_case_if_not_deleted(db, case_id)
     if not c:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
-    import datetime as dt
     c.retainer_is_frozen = freeze
     c.retainer_frozen_at = dt.date.today() if freeze else None
     db.commit()
     db.refresh(c)
+    return c
+
+
+def update_case_retainer_dates(
+    db: Session,
+    *,
+    case_id: int,
+    retainer_anchor_date: dt.date | None = None,
+    retainer_snapshot_through_month: dt.date | None = None,
+) -> Case:
+    """Update retainer_anchor_date and/or retainer_snapshot_through_month. Snapshot is normalized to first-of-month."""
+    from app.services.unified import get_effective_end_date
+
+    c = get_case_if_not_deleted(db, case_id)
+    if not c:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+    if retainer_anchor_date is not None:
+        c.retainer_anchor_date = retainer_anchor_date
+    if retainer_snapshot_through_month is not None:
+        first = dt.date(
+            retainer_snapshot_through_month.year,
+            retainer_snapshot_through_month.month,
+            1,
+        )
+        c.retainer_snapshot_through_month = first
+    db.commit()
+    db.refresh(c)
+    # Ensure accruals exist up to effective end (respects freeze)
+    if c.retainer_snapshot_ils_gross is None:
+        ensure_accruals_up_to(db, case_id=c.id, retainer_anchor_date=c.retainer_anchor_date, up_to=get_effective_end_date(c))
+    elif c.retainer_snapshot_through_month is not None:
+        ensure_accruals_up_to(
+            db,
+            case_id=c.id,
+            retainer_anchor_date=c.retainer_anchor_date,
+            snapshot_through_month=c.retainer_snapshot_through_month,
+            up_to=get_effective_end_date(c),
+        )
     return c
 
 
@@ -261,8 +299,32 @@ def update_case_expenses_total(db: Session, *, case_id: int, expenses_total_ils_
     return c
 
 
+# Override keys that hold money amounts; we store them as decimal strings to preserve precision.
+_MONEY_OVERRIDE_KEYS = frozenset({
+    "excess_total_ils_override",
+    "retainer_charged_override",
+    "expenses_total_override",
+    "fees_by_stages_override",
+    "excess_remaining_override",
+    "fee_diff_override",
+})
+
+
+def _override_value_to_storage(v: Any) -> Any:
+    """Store money overrides as decimal strings; preserve precision (no float)."""
+    if v is None:
+        return None
+    if isinstance(v, Decimal):
+        return str(v.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+    if isinstance(v, (int, float)):
+        return str(Decimal(str(v)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+    return v
+
+
 def update_case_manual_overrides(db: Session, *, case_id: int, overrides: dict[str, Any]) -> Case:
-    """Merge overrides into case.manual_overrides_json. Keys with None remove the override."""
+    """Merge overrides into case.manual_overrides_json. Keys with None remove the override.
+    Money values are stored as decimal strings (e.g. "1234.56") to preserve precision.
+    """
     c = get_case_if_not_deleted(db, case_id)
     if not c:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
@@ -271,8 +333,10 @@ def update_case_manual_overrides(db: Session, *, case_id: int, overrides: dict[s
         if v is None:
             current.pop(k, None)
         else:
-            # Store JSON-serializable value (Decimal -> float for JSONB)
-            current[k] = float(v) if isinstance(v, Decimal) else v
+            if k in _MONEY_OVERRIDE_KEYS:
+                current[k] = _override_value_to_storage(v)
+            else:
+                current[k] = v
     c.manual_overrides_json = current if current else None
     db.commit()
     db.refresh(c)

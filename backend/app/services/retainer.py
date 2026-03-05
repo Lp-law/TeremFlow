@@ -61,6 +61,32 @@ def _accrual_start_month(retainer_anchor_date: dt.date, snapshot_through_month: 
     return get_retainer_start_month(retainer_anchor_date)
 
 
+def count_charged_months(
+    anchor_date: dt.date,
+    effective_end_date: dt.date,
+    snapshot_through_month: dt.date | None = None,
+) -> int:
+    """
+    Count calendar months inclusively from start month to end month (by month boundaries).
+
+    Rule:
+    - anchor_date is treated as first-of-month (start of that month).
+    - effective_end_date can be any day; we use the month containing that day as the last charged month.
+    - If snapshot_through_month is set, start = first day of the month *after* snapshot_through_month.
+    - Count = number of calendar months from start to end inclusive. Same month -> 1. No gap.
+
+    Examples:
+    - anchor 2024-07-01, end 2024-07-15 -> 1 (July only).
+    - anchor 2024-07-01, end 2025-06-01 -> 12 (Jul'24 through Jun'25).
+    - anchor 2024-07-01, end 2025-02-15 -> 8 (Jul'24 through Feb'25).
+    """
+    start = _accrual_start_month(_month_start(anchor_date), snapshot_through_month)
+    end = _month_start(effective_end_date)
+    if start > end:
+        return 0
+    return (end.year - start.year) * 12 + (end.month - start.month) + 1
+
+
 def ensure_accruals_up_to(
     db: Session,
     *,

@@ -8,6 +8,7 @@ from app.db.session import get_db
 from app.models.retainer import RetainerAccrual, RetainerPayment
 from app.schemas.retainer import (
     RetainerAccrualOut,
+    RetainerDatesUpdate,
     RetainerFreezeRequest,
     RetainerLedgerOut,
     RetainerPaymentCreate,
@@ -105,6 +106,19 @@ def ledger(case_id: int, db: Session = Depends(get_db), _=Depends(require_auth))
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Case not found")
     return RetainerLedgerOut(**data)
+
+
+@router.patch("/dates", response_model=CaseOut)
+def update_retainer_dates(case_id: int, payload: RetainerDatesUpdate, db: Session = Depends(get_db), _=Depends(require_auth)):
+    """Update retainer_anchor_date and/or retainer_snapshot_through_month (normalized to first-of-month)."""
+    c = case_service.update_case_retainer_dates(
+        db,
+        case_id=case_id,
+        retainer_anchor_date=payload.retainer_anchor_date,
+        retainer_snapshot_through_month=payload.retainer_snapshot_through_month,
+    )
+    stages = case_service.get_latest_fee_stage_by_case_ids(db, [c.id])
+    return CaseOut(**case_service.to_case_out(db, c, current_procedure_stage=stages.get(c.id)))
 
 
 @router.post("/freeze", response_model=CaseOut)

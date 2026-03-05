@@ -48,6 +48,10 @@ export type CaseOut = {
   performed_fee_stage_codes?: string[] | null
   raw_import_fields_json?: Record<string, unknown> | null
   excess_remaining_ils_gross: string | number
+  /** Case-level editable expenses total (unified model). */
+  expenses_total_ils_gross?: string | number | null
+  retainer_is_frozen?: boolean
+  retainer_frozen_at?: string | null
   insurer_started: boolean
   insurer_start_date: string | null
 }
@@ -73,14 +77,18 @@ export type ExpenseSummary = {
   other_expenses_ils: string | number
 }
 
+/** Unified deductible/excess summary (GET /cases/{id}/deductible/summary). */
 export type DeductibleSummary = {
-  deductible_total_ils: string | number
-  deductible_consumed_ils: string | number
-  deductible_remaining_ils: string | number
-  excess_remaining_ils: string | number | null
-  notes: { deductible_consumed_only_by_client_deductible_expenses?: boolean }
+  excess_total_ils: string | number
+  retainer_charged_to_date_ils: string | number
+  expenses_total_ils: string | number
+  fees_by_stages_ils: string | number
+  excess_remaining_ils: string | number
+  fee_diff_ils: string | number
+  manual_overrides: Record<string, unknown>
 }
 
+/** Unified overview from GET /cases/{id}/overview-summary */
 export type CaseOverviewSummary = {
   case_reference: string
   case_name: string | null
@@ -88,23 +96,25 @@ export type CaseOverviewSummary = {
   status: string
   current_procedure_stage: string | null
   fees: {
-    total_fees_ils: string | number
-    fees_due_ils: string | number
+    fees_by_stages_ils: string | number
+    retainer_charged_to_date_ils: string | number
+    fee_diff_ils: string | number
     last_fee_event_date: string | null
     last_fee_event_amount: string | number | null
   }
   retainer: {
-    current_credit_ils: string | number
+    retainer_charged_to_date_ils: string | number
+    charged_months_count: number
     monthly_gross_ils: string | number
+    retainer_is_frozen: boolean
+    retainer_frozen_at: string | null
   }
   expenses: {
     total_expenses_ils: string | number
-    deductible_consumed_ils: string | number
   }
   deductible: {
-    total_ils: string | number
-    remaining_ils: string | number
-    excess_remaining_ils: string | number | null
+    excess_total_ils: string | number
+    excess_remaining_ils: string | number
   }
 }
 

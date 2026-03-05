@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { BackButton } from '../components/BackButton'
 import { apiDownload, apiFetch } from '../lib/api'
@@ -96,6 +96,7 @@ export function CaseDetailsPage() {
   const [feeEvents, setFeeEvents] = useState<FeeEvent[]>([])
   const [exportLoading, setExportLoading] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
+  const [refreshOverviewDeductibleKey, setRefreshOverviewDeductibleKey] = useState(0)
 
   useEffect(() => {
     if (activeModal) {
@@ -236,6 +237,7 @@ export function CaseDetailsPage() {
                   caseItem={caseItem}
                   currentLegalStage={currentLegalStage}
                   setTab={setTab}
+                  refreshKey={refreshOverviewDeductibleKey}
                 />
               ) : null}
 
@@ -244,6 +246,11 @@ export function CaseDetailsPage() {
                   caseItem={caseItem}
                   expenses={expenses}
                   onReload={load}
+                  onExpensesTotalSaved={() => setRefreshOverviewDeductibleKey((k) => k + 1)}
+                  onToast={(msg) => {
+                    setToast(msg)
+                    setTimeout(() => setToast(null), 4000)
+                  }}
                   initialPayerFilter={expensesInitialPayerFilter || undefined}
                   onConsumedInitialFilter={() => setExpensesInitialPayerFilter('')}
                 />
@@ -252,6 +259,12 @@ export function CaseDetailsPage() {
               {tab === 'deductible' ? (
                 <DeductibleTab
                   caseId={caseItem.id}
+                  refreshKey={refreshOverviewDeductibleKey}
+                  onOverridesSaved={() => setRefreshOverviewDeductibleKey((k) => k + 1)}
+                  onToast={(msg) => {
+                    setToast(msg)
+                    setTimeout(() => setToast(null), 4000)
+                  }}
                   onGoToExpensesWithDeductibleFilter={() => {
                     setExpensesInitialPayerFilter('CLIENT_DEDUCTIBLE')
                     setTab('expenses')
@@ -262,8 +275,15 @@ export function CaseDetailsPage() {
               {tab === 'retainer' ? (
                 <RetainerPanel
                   caseId={caseItem.id}
+                  caseItem={caseItem}
                   onOpenAddPayment={() => setActiveModal('retainerPayment')}
                   retainerReloadKey={retainerReloadKey}
+                  onRetainerChange={() => setRefreshOverviewDeductibleKey((k) => k + 1)}
+                  onCaseUpdated={load}
+                  onToast={(msg) => {
+                    setToast(msg)
+                    setTimeout(() => setToast(null), 4000)
+                  }}
                 />
               ) : null}
               {tab === 'fees' ? (
@@ -273,6 +293,11 @@ export function CaseDetailsPage() {
                   legacyFeeText={caseItem.legacy_fee_text ?? null}
                   onOpenStageBilling={() => setActiveModal('stageBilling')}
                   feesReloadKey={feesReloadKey}
+                  onFeeEventDeleted={() => setRefreshOverviewDeductibleKey((k) => k + 1)}
+                  onToast={(msg) => {
+                    setToast(msg)
+                    setTimeout(() => setToast(null), 4000)
+                  }}
                 />
               ) : null}
             </div>
@@ -321,11 +346,13 @@ function OverviewTab({
   caseItem,
   currentLegalStage,
   setTab,
+  refreshKey = 0,
 }: {
   caseId: number
   caseItem: CaseOut
   currentLegalStage: string | null
   setTab: (tab: 'overview' | 'expenses' | 'deductible' | 'retainer' | 'fees') => void
+  refreshKey?: number
 }) {
   const [overview, setOverview] = useState<CaseOverviewSummary | null>(null)
   const [overviewLoading, setOverviewLoading] = useState(true)
@@ -342,7 +369,7 @@ function OverviewTab({
       .catch((e: any) => { if (!cancelled) setOverviewError(e?.message || 'שגיאה') })
       .finally(() => { if (!cancelled) setOverviewLoading(false) })
     return () => { cancelled = true }
-  }, [caseId])
+  }, [caseId, refreshKey])
 
   useEffect(() => {
     let cancelled = false
@@ -368,67 +395,77 @@ function OverviewTab({
         ) : overviewError ? (
           <div className="text-sm text-amber-600 py-4">לא ניתן לטעון סיכום. נתוני התיק למטה.</div>
         ) : overview ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {/* Procedure stage */}
-            <div className="card-soft p-4">
-              <div className="text-xs text-muted mb-1">שלב הליך נוכחי</div>
-              <div className="font-semibold">{stageLabel}</div>
-              <div className="text-xs text-muted mt-1">סטטוס: {overview.status === 'OPEN' ? 'פתוח' : 'סגור'}</div>
-              <button type="button" onClick={() => setTab('fees')} className="btn btn-secondary btn-sm mt-3">
-                לשלבי שכ״ט
-              </button>
-            </div>
-
-            {/* Fees */}
-            <div className="card-soft p-4">
-              <div className="text-xs text-muted mb-1">שכ״ט מחויב (סה״כ)</div>
-              <div className="font-semibold">{formatILS(overview.fees.total_fees_ils)}</div>
-              <div className="text-xs text-muted mt-1">
-                שכ״ט לתשלום: {formatILS(overview.fees.fees_due_ils)}
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Procedure stage */}
+              <div className="card-soft p-4">
+                <div className="text-xs text-muted mb-1">שלב הליך נוכחי</div>
+                <div className="font-semibold">{stageLabel}</div>
+                <div className="text-xs text-muted mt-1">סטטוס: {overview.status === 'OPEN' ? 'פתוח' : 'סגור'}</div>
+                <button type="button" onClick={() => setTab('fees')} className="btn btn-secondary btn-sm mt-3">
+                  לשלבי שכ״ט
+                </button>
               </div>
-              {overview.fees.last_fee_event_date && overview.fees.last_fee_event_amount != null ? (
-                <div className="text-xs text-muted mt-0.5">
-                  אירוע חיוב אחרון: {overview.fees.last_fee_event_date} / {formatILS(overview.fees.last_fee_event_amount)}
+              {/* Retainer summary + freeze */}
+              <div className="card-soft p-4">
+                <div className="text-xs text-muted mb-1">ריטיינר חודשי</div>
+                <div className="font-semibold">{formatILS(overview.retainer.monthly_gross_ils)}</div>
+                {overview.retainer.retainer_is_frozen && overview.retainer.retainer_frozen_at ? (
+                  <div className="text-xs text-muted mt-1">מוקפא מאז {overview.retainer.retainer_frozen_at}</div>
+                ) : null}
+                <button type="button" onClick={() => setTab('retainer')} className="btn btn-secondary btn-sm mt-3">
+                  לריטיינר
+                </button>
+              </div>
+            </div>
+
+            {/* תמונת מצב כספית — unified 6 rows */}
+            <div className="mt-6">
+              <h3 className="text-sm font-semibold text-muted mb-3">תמונת מצב כספית</h3>
+              <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="card-soft p-4">
+                  <dt className="text-xs text-muted">שכ״ט ששולם עד כה (תיאורטי)</dt>
+                  <dd className="mt-1 font-semibold">{formatILS(overview.retainer.retainer_charged_to_date_ils)}</dd>
                 </div>
-              ) : null}
-              <button type="button" onClick={() => setTab('fees')} className="btn btn-secondary btn-sm mt-3">
-                לשלבי שכ״ט
-              </button>
+                <div className="card-soft p-4">
+                  <dt className="text-xs text-muted">שכ״ט לפי שלבים</dt>
+                  <dd className="mt-1 font-semibold">{formatILS(overview.fees.fees_by_stages_ils)}</dd>
+                  {overview.fees.last_fee_event_date && overview.fees.last_fee_event_amount != null ? (
+                    <dd className="text-xs text-muted mt-0.5">אירוע אחרון: {overview.fees.last_fee_event_date}</dd>
+                  ) : null}
+                </div>
+                <div className="card-soft p-4">
+                  <dt className="text-xs text-muted">הוצאות עד כה</dt>
+                  <dd className="mt-1 font-semibold">{formatILS(overview.expenses.total_expenses_ils)}</dd>
+                </div>
+                <div className="card-soft p-4">
+                  <dt className="text-xs text-muted">אקסס כולל</dt>
+                  <dd className="mt-1 font-semibold">{formatILS(overview.deductible.excess_total_ils)}</dd>
+                </div>
+                <div className="card-soft p-4">
+                  <dt className="text-xs text-muted">יתרת אקסס</dt>
+                  <dd className="mt-1 font-semibold">{formatILS(overview.deductible.excess_remaining_ils)}</dd>
+                </div>
+                <div className="card-soft p-4">
+                  <dt className="text-xs text-muted">הפרש שכ״ט</dt>
+                  <dd className={`mt-1 font-semibold ${toNumber(overview.fees.fee_diff_ils) < 0 ? 'text-red-400' : ''}`}>
+                    {formatILS(overview.fees.fee_diff_ils)}
+                  </dd>
+                </div>
+              </dl>
+              <div className="flex flex-wrap gap-2 mt-3">
+                <button type="button" onClick={() => setTab('expenses')} className="btn btn-secondary btn-sm">
+                  להוצאות
+                </button>
+                <button type="button" onClick={() => setTab('deductible')} className="btn btn-secondary btn-sm">
+                  להשתתפות עצמית / אקסס
+                </button>
+                <button type="button" onClick={() => setTab('fees')} className="btn btn-secondary btn-sm">
+                  לשלבי שכ״ט
+                </button>
+              </div>
             </div>
-
-            {/* Retainer */}
-            <div className="card-soft p-4">
-              <div className="text-xs text-muted mb-1">קרדיט ריטיינר נוכחי</div>
-              <div className="font-semibold">{formatILS(overview.retainer.current_credit_ils)}</div>
-              <div className="text-xs text-muted mt-1">ריטיינר חודשי: {formatILS(overview.retainer.monthly_gross_ils)}</div>
-              <button type="button" onClick={() => setTab('retainer')} className="btn btn-secondary btn-sm mt-3">
-                לריטיינר
-              </button>
-            </div>
-
-            {/* Expenses */}
-            <div className="card-soft p-4">
-              <div className="text-xs text-muted mb-1">סה״כ הוצאות</div>
-              <div className="font-semibold">{formatILS(overview.expenses.total_expenses_ils)}</div>
-              <div className="text-xs text-muted mt-1">נוגס בהשתתפות עצמית: {formatILS(overview.expenses.deductible_consumed_ils)}</div>
-              <button type="button" onClick={() => setTab('expenses')} className="btn btn-secondary btn-sm mt-3">
-                להוצאות
-              </button>
-            </div>
-
-            {/* Deductible / excess */}
-            <div className="card-soft p-4">
-              <div className="text-xs text-muted mb-1">אקסס כולל</div>
-              <div className="font-semibold">{formatILS(overview.deductible.total_ils)}</div>
-              <div className="text-xs text-muted mt-1">יתרה: {formatILS(overview.deductible.remaining_ils)}</div>
-              {overview.deductible.excess_remaining_ils != null ? (
-                <div className="text-xs text-muted mt-0.5">יתרת אקסס: {formatILS(overview.deductible.excess_remaining_ils)}</div>
-              ) : null}
-              <button type="button" onClick={() => setTab('deductible')} className="btn btn-secondary btn-sm mt-3">
-                להשתתפות עצמית
-              </button>
-            </div>
-          </div>
+          </>
         ) : null}
       </section>
 
@@ -485,19 +522,7 @@ function OverviewTab({
         </dl>
       </section>
 
-      <section>
-        <h3 className="text-sm font-semibold text-muted mb-3">תמונת מצב כספית (לקריאה בלבד)</h3>
-        <dl className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
-          <ReadOnlyRow label="השתתפות עצמית (ברוטו)" value={formatILS(caseItem.deductible_ils_gross)} />
-          <ReadOnlyRow label="שכ״ט ששולם עד כה" value={caseItem.retainer_snapshot_ils_gross != null ? formatILS(caseItem.retainer_snapshot_ils_gross) : '—'} />
-          <ReadOnlyRow
-            label="חודש סיום snapshot"
-            value={caseItem.retainer_snapshot_through_month ?? '—'}
-          />
-          <ReadOnlyRow label="הוצאות ששולמו עד כה" value={caseItem.expenses_snapshot_ils_gross != null ? formatILS(caseItem.expenses_snapshot_ils_gross) : '—'} />
-          <ReadOnlyRow label="יתרת השתתפות עצמית" value={formatILS(caseItem.excess_remaining_ils_gross)} />
-        </dl>
-      </section>
+      {/* Unified financial numbers are in "תמונת מצב כספית" above (from overview-summary). */}
 
       <section>
         <h3 className="text-sm font-semibold text-muted mb-3">מידע משפטי / תהליכי</h3>
@@ -653,60 +678,220 @@ function ReadOnlyRow({ label, value }: { label: string; value: string }) {
   )
 }
 
+const DEDUCTIBLE_FIELDS: Array<{
+  key: keyof DeductibleSummary
+  overrideKey: string
+  label: string
+  allowNegative: boolean
+}> = [
+  { key: 'excess_total_ils', overrideKey: 'excess_total_ils_override', label: 'אקסס כולל', allowNegative: false },
+  { key: 'retainer_charged_to_date_ils', overrideKey: 'retainer_charged_override', label: 'נצרך עד כה ריטיינר', allowNegative: false },
+  { key: 'expenses_total_ils', overrideKey: 'expenses_total_override', label: 'הוצאות', allowNegative: false },
+  { key: 'fees_by_stages_ils', overrideKey: 'fees_by_stages_override', label: 'שכ״ט לפי שלבים', allowNegative: false },
+  { key: 'excess_remaining_ils', overrideKey: 'excess_remaining_override', label: 'יתרת אקסס', allowNegative: false },
+  { key: 'fee_diff_ils', overrideKey: 'fee_diff_override', label: 'הפרש שכ״ט', allowNegative: true },
+]
+
 function DeductibleTab({
   caseId,
+  refreshKey = 0,
+  onOverridesSaved,
+  onToast,
   onGoToExpensesWithDeductibleFilter,
 }: {
   caseId: number
+  refreshKey?: number
+  onOverridesSaved?: () => void
+  onToast?: (msg: string) => void
   onGoToExpensesWithDeductibleFilter: () => void
 }) {
   const [summary, setSummary] = useState<DeductibleSummary | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [editingKey, setEditingKey] = useState<string | null>(null)
+  const [editValue, setEditValue] = useState('')
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [savingKey, setSavingKey] = useState<string | null>(null)
+
+  const loadSummary = useCallback(() => {
+    setError(null)
+    return apiFetch<DeductibleSummary>(`/cases/${caseId}/deductible/summary`)
+      .then(setSummary)
+      .catch((e: any) => setError(e?.message || 'שגיאה'))
+      .finally(() => setIsLoading(false))
+  }, [caseId])
 
   useEffect(() => {
     let cancelled = false
-    setError(null)
     setSummary(null)
+    setIsLoading(true)
     apiFetch<DeductibleSummary>(`/cases/${caseId}/deductible/summary`)
       .then((s) => { if (!cancelled) setSummary(s) })
       .catch((e: any) => { if (!cancelled) setError(e?.message || 'שגיאה') })
       .finally(() => { if (!cancelled) setIsLoading(false) })
     return () => { cancelled = true }
-  }, [caseId])
+  }, [caseId, refreshKey])
+
+  function getValue(fieldKey: keyof DeductibleSummary): number {
+    if (!summary) return 0
+    const v = summary[fieldKey]
+    return toNumber(v)
+  }
+
+  function isOverridden(overrideKey: string): boolean {
+    return !!(summary?.manual_overrides && summary.manual_overrides[overrideKey] != null)
+  }
+
+  function startEdit(overrideKey: string, fieldKey: keyof DeductibleSummary) {
+    setEditingKey(overrideKey)
+    setEditValue(String(getValue(fieldKey)))
+    setSaveError(null)
+  }
+
+  function cancelEdit() {
+    setEditingKey(null)
+    setEditValue('')
+    setSaveError(null)
+  }
+
+  async function saveOverride(overrideKey: string, allowNegative: boolean) {
+    const num = toNumber(editValue)
+    if (!Number.isFinite(num)) {
+      setSaveError('נא להזין מספר תקין')
+      return
+    }
+    if (!allowNegative && num < 0) {
+      setSaveError('נא להזין ערך גדול או שווה לאפס')
+      return
+    }
+    setSaveError(null)
+    setSavingKey(overrideKey)
+    try {
+      await apiFetch(`/cases/${caseId}/overrides`, {
+        method: 'PATCH',
+        body: JSON.stringify({ [overrideKey]: num }),
+      })
+      await loadSummary()
+      onOverridesSaved?.()
+      onToast?.('הערך נשמר')
+      setEditingKey(null)
+      setEditValue('')
+    } catch (e: any) {
+      setSaveError(e?.message || 'שגיאה בשמירה')
+    } finally {
+      setSavingKey(null)
+    }
+  }
+
+  async function resetOverride(overrideKey: string) {
+    setSavingKey(overrideKey)
+    try {
+      await apiFetch(`/cases/${caseId}/overrides`, {
+        method: 'PATCH',
+        body: JSON.stringify({ [overrideKey]: null }),
+      })
+      await loadSummary()
+      onOverridesSaved?.()
+      onToast?.('אופס לערך מחושב')
+    } catch (e: any) {
+      onToast?.(e?.message || 'שגיאה באיפוס')
+    } finally {
+      setSavingKey(null)
+    }
+  }
 
   if (isLoading) return <div className="text-right text-sm text-muted">טוען...</div>
   if (error) return <div className="text-right text-sm text-red-300">{error}</div>
   if (!summary) return null
 
-  const hasExcess = summary.excess_remaining_ils != null
-
   return (
-    <div className="space-y-6">
-      <div className={`grid grid-cols-1 sm:grid-cols-3 gap-3 ${hasExcess ? 'sm:grid-cols-4' : ''}`}>
-        <div className="card-soft p-4">
-          <div className="text-xs text-muted mb-1">אקסס כולל</div>
-          <div className="font-semibold">{formatILS(summary.deductible_total_ils)}</div>
-        </div>
-        <div className="card-soft p-4">
-          <div className="text-xs text-muted mb-1">נצרך עד כה</div>
-          <div className="font-semibold">{formatILS(summary.deductible_consumed_ils)}</div>
-        </div>
-        <div className="card-soft p-4">
-          <div className="text-xs text-muted mb-1">יתרה</div>
-          <div className="font-semibold">{formatILS(summary.deductible_remaining_ils)}</div>
-        </div>
-        {hasExcess ? (
-          <div className="card-soft p-4">
-            <div className="text-xs text-muted mb-1">יתרת אקסס</div>
-            <div className="font-semibold">{formatILS(summary.excess_remaining_ils)}</div>
-          </div>
-        ) : null}
+    <div className="space-y-6 text-right">
+      <div className="grid grid-cols-1 gap-3 max-w-2xl">
+        {DEDUCTIBLE_FIELDS.map(({ key, overrideKey, label, allowNegative }) => {
+          const value = getValue(key)
+          const overridden = isOverridden(overrideKey)
+          const isEditing = editingKey === overrideKey
+          const isSaving = savingKey === overrideKey
+
+          return (
+            <div key={overrideKey} className="card-soft p-4 flex flex-wrap items-center gap-3 justify-between">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs text-muted">{label}</span>
+                  {overridden ? (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-700 dark:text-amber-300">
+                      ידני
+                    </span>
+                  ) : null}
+                </div>
+                {isEditing ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <input
+                      type="number"
+                      step={0.01}
+                      inputMode="decimal"
+                      className="input w-36 py-2 text-right"
+                      value={editValue}
+                      onChange={(e) => setEditValue(e.target.value)}
+                      dir="ltr"
+                      aria-label={label}
+                    />
+                    <span className="text-muted">₪</span>
+                    <button
+                      type="button"
+                      onClick={() => saveOverride(overrideKey, allowNegative)}
+                      disabled={isSaving}
+                      className="btn btn-primary btn-sm"
+                    >
+                      {isSaving ? '...' : 'שמור'}
+                    </button>
+                    <button type="button" onClick={cancelEdit} className="btn btn-secondary btn-sm">
+                      ביטול
+                    </button>
+                  </div>
+                ) : (
+                  <div className={`font-semibold mt-0.5 ${key === 'fee_diff_ils' && value < 0 ? 'text-red-400' : ''}`}>
+                    {formatILS(value)}
+                  </div>
+                )}
+                {isEditing && saveError ? (
+                  <p className="text-sm text-red-400 mt-1" role="alert">{saveError}</p>
+                ) : null}
+              </div>
+              {!isEditing ? (
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => startEdit(overrideKey, key)}
+                    disabled={isSaving}
+                    className="p-2 rounded-lg border border-border/60 hover:bg-surface/50 text-muted hover:text-foreground disabled:opacity-50"
+                    title="עריכה"
+                    aria-label={`ערוך ${label}`}
+                  >
+                    ✎
+                  </button>
+                  {overridden ? (
+                    <button
+                      type="button"
+                      onClick={() => resetOverride(overrideKey)}
+                      disabled={isSaving}
+                      className="p-2 rounded-lg border border-border/60 hover:bg-surface/50 text-muted hover:text-foreground disabled:opacity-50"
+                      title="איפוס לערך מחושב"
+                      aria-label={`איפוס ${label}`}
+                    >
+                      ↺
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          )
+        })}
       </div>
 
-      <div className="card-soft p-4 bg-muted/20">
-        <p className="text-sm text-right text-muted leading-relaxed">
-          רק הוצאות שמסומנות &quot;השתתפות עצמית&quot; נוגסות באקסס. שכ״ט וריטיינר לא.
+      <div className="card-soft p-4 bg-muted/20 max-w-2xl">
+        <p className="text-sm text-muted leading-relaxed">
+          ערכים מחושבים אוטומטית. לחיצה על העיפרון מאפשרת דריסה ידנית; איפוס מחזיר לערך המחושב.
         </p>
       </div>
 
@@ -718,7 +903,7 @@ function DeductibleTab({
         >
           לכל ההוצאות
         </button>
-        <span className="mr-2 text-sm text-muted">(יפתח את לשונית הוצאות עם מסנן השתתפות עצמית)</span>
+        <span className="mr-2 text-sm text-muted">(יפתח את לשונית הוצאות)</span>
       </div>
     </div>
   )
@@ -728,17 +913,135 @@ function ExpensesTab({
   caseItem,
   expenses,
   onReload,
+  onExpensesTotalSaved,
+  onToast,
   initialPayerFilter,
   onConsumedInitialFilter,
 }: {
   caseItem: CaseOut
   expenses: ExpenseOut[]
   onReload: () => void | Promise<void>
+  onExpensesTotalSaved?: () => void
+  onToast?: (msg: string) => void
   initialPayerFilter?: ExpensePayer
   onConsumedInitialFilter?: () => void
 }) {
+  const caseId = caseItem.id
+  const serverTotal = caseItem.expenses_total_ils_gross != null ? toNumber(caseItem.expenses_total_ils_gross) : 0
+  const [totalInput, setTotalInput] = useState(() => String(serverTotal >= 0 ? serverTotal : 0))
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
+  const [detailOpen, setDetailOpen] = useState(false)
+
+  // Sync input from server when case or server value changes (e.g. after reload)
+  useEffect(() => {
+    const v = caseItem.expenses_total_ils_gross != null ? toNumber(caseItem.expenses_total_ils_gross) : 0
+    setTotalInput(String(v >= 0 ? v : 0))
+  }, [caseId, caseItem.expenses_total_ils_gross])
+
+  async function handleSaveTotal() {
+    const num = toNumber(totalInput)
+    if (!Number.isFinite(num) || num < 0) {
+      setSaveError('נא להזין סכום גדול או שווה לאפס')
+      return
+    }
+    setSaveError(null)
+    setIsSaving(true)
+    try {
+      await apiFetch(`/cases/${caseId}/expenses/total`, {
+        method: 'PATCH',
+        body: JSON.stringify({ expenses_total_ils_gross: num }),
+      })
+      setTotalInput(String(num))
+      await onReload()
+      onExpensesTotalSaved?.()
+      onToast?.('סה״כ הוצאות נשמר בהצלחה')
+    } catch (e: any) {
+      setSaveError(e?.message || 'שגיאה בשמירה')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  return (
+    <div className="space-y-6 text-right">
+      {/* Primary: single editable total */}
+      <section className="card-soft p-6 max-w-xl">
+        <h3 className="text-lg font-semibold mb-2">סה״כ הוצאות עד כה</h3>
+        <div className="flex flex-wrap items-center gap-3 gap-y-2">
+          <label className="sr-only" htmlFor="expenses-total-input">סה״כ הוצאות (₪)</label>
+          <input
+            id="expenses-total-input"
+            type="number"
+            min={0}
+            step={0.01}
+            inputMode="decimal"
+            className="input text-2xl font-semibold w-48 py-3 text-right"
+            value={totalInput}
+            onChange={(e) => setTotalInput(e.target.value)}
+            dir="ltr"
+            aria-invalid={saveError ? true : undefined}
+          />
+          <span className="text-xl text-muted">₪</span>
+          <button
+            type="button"
+            onClick={handleSaveTotal}
+            disabled={isSaving}
+            className="btn btn-primary h-12 px-6 rounded-2xl disabled:opacity-60"
+          >
+            {isSaving ? 'שומר...' : 'שמור'}
+          </button>
+        </div>
+        <p className="text-sm text-muted mt-3">
+          אין צורך בפירוט; זה סכום מצטבר שמתעדכן מדי פעם.
+        </p>
+        {saveError ? (
+          <p className="text-sm text-red-400 mt-2" role="alert">{saveError}</p>
+        ) : null}
+      </section>
+
+      {/* Optional: collapsible itemized detail */}
+      <section>
+        <button
+          type="button"
+          onClick={() => setDetailOpen((o) => !o)}
+          className="flex items-center gap-2 text-sm text-muted hover:text-foreground"
+        >
+          <span className="inline-block w-5 text-left">{detailOpen ? '▼' : '▶'}</span>
+          מתקדם: פירוט הוצאות
+        </button>
+        {detailOpen ? (
+          <ExpensesDetailTable
+            caseId={caseId}
+            caseItem={caseItem}
+            expenses={expenses}
+            onReload={onReload}
+            initialPayerFilter={initialPayerFilter ?? ''}
+            onConsumedInitialFilter={onConsumedInitialFilter}
+          />
+        ) : null}
+      </section>
+    </div>
+  )
+}
+
+function ExpensesDetailTable({
+  caseId,
+  caseItem,
+  expenses,
+  onReload,
+  initialPayerFilter,
+  onConsumedInitialFilter,
+}: {
+  caseId: number
+  caseItem: CaseOut
+  expenses: ExpenseOut[]
+  onReload: () => void | Promise<void>
+  initialPayerFilter: ExpensePayer | ''
+  onConsumedInitialFilter?: () => void
+}) {
   const [summary, setSummary] = useState<ExpenseSummary | null>(null)
-  const [payerFilter, setPayerFilter] = useState<ExpensePayer | ''>(initialPayerFilter ?? '')
+  const [payerFilter, setPayerFilter] = useState<ExpensePayer | ''>(initialPayerFilter)
   useEffect(() => {
     if (initialPayerFilter && onConsumedInitialFilter) {
       setPayerFilter(initialPayerFilter)
@@ -749,7 +1052,6 @@ function ExpensesTab({
   const [editingExpenseId, setEditingExpenseId] = useState<number | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
 
-  const caseId = caseItem.id
   const hasSnapshot =
     caseItem.expenses_snapshot_ils_gross != null && Number(caseItem.expenses_snapshot_ils_gross) > 0
 
@@ -786,38 +1088,13 @@ function ExpensesTab({
     }
   }
 
-  const totalDisplay = summary ? formatILS(summary.total_expenses_ils) : '—'
-  const deductibleDisplay = summary ? formatILS(summary.deductible_consumed_by_expenses_ils) : '—'
-  const otherDisplay = summary ? formatILS(summary.other_expenses_ils) : '—'
-
   return (
-    <div className="space-y-6">
-      {/* Summary cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="card-soft p-4">
-          <div className="text-xs text-muted mb-1">סה״כ הוצאות</div>
-          <div className="font-semibold">{totalDisplay}</div>
-        </div>
-        <div className="card-soft p-4">
-          <div className="text-xs text-muted mb-1">נוגס בהשתתפות עצמית</div>
-          <div className="font-semibold">{deductibleDisplay}</div>
-        </div>
-        <div className="card-soft p-4">
-          <div className="text-xs text-muted mb-1">הוצאות אחרות</div>
-          <div className="font-semibold">{otherDisplay}</div>
-        </div>
-      </div>
-
-      {/* Snapshot (read-only from import) */}
+    <div className="mt-4 space-y-4 border border-border/40 rounded-xl p-4 bg-muted/10">
       {hasSnapshot ? (
-        <div className="card-soft p-4 bg-muted/20">
-          <div className="text-sm text-right text-muted">
-            Snapshot הוצאות (מהייבוא): {formatILS(caseItem.expenses_snapshot_ils_gross)} ₪
-          </div>
+        <div className="text-sm text-muted text-right">
+          Snapshot הוצאות (מהייבוא): {formatILS(caseItem.expenses_snapshot_ils_gross)} ₪
         </div>
       ) : null}
-
-      {/* Filter chips + search */}
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm text-muted">מסנן:</span>
         <button
@@ -845,8 +1122,6 @@ function ExpensesTab({
           onChange={(e) => setSearchText(e.target.value)}
         />
       </div>
-
-      {/* Table */}
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="text-muted">
@@ -898,7 +1173,6 @@ function ExpensesTab({
           </tbody>
         </table>
       </div>
-
       {editingExpenseId != null ? (
         <EditExpenseModal
           caseId={caseId}
@@ -1202,23 +1476,46 @@ function Field({
 
 function RetainerPanel({
   caseId,
+  caseItem,
   onOpenAddPayment,
   retainerReloadKey,
+  onRetainerChange,
+  onCaseUpdated,
+  onToast,
 }: {
   caseId: number
+  caseItem: CaseOut
   onOpenAddPayment: () => void
   retainerReloadKey: number
+  onRetainerChange?: () => void
+  onCaseUpdated?: () => void | Promise<void>
+  onToast?: (msg: string) => void
 }) {
   const [ledger, setLedger] = useState<RetainerLedger | null>(null)
+  const [overview, setOverview] = useState<CaseOverviewSummary | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [anchorDate, setAnchorDate] = useState(caseItem.retainer_anchor_date?.slice(0, 10) ?? '')
+  const [snapshotMonth, setSnapshotMonth] = useState(
+    caseItem.retainer_snapshot_through_month ? String(caseItem.retainer_snapshot_through_month).slice(0, 7) : ''
+  )
+  const [datesSaveError, setDatesSaveError] = useState<string | null>(null)
+  const [datesSaving, setDatesSaving] = useState(false)
+  const [freezeSaving, setFreezeSaving] = useState(false)
+
+  const isFrozen = !!caseItem.retainer_is_frozen
+  const frozenAt = caseItem.retainer_frozen_at ?? null
 
   async function load() {
     setError(null)
     setIsLoading(true)
     try {
-      const data = await apiFetch<RetainerLedger>(`/cases/${caseId}/retainer/ledger`)
-      setLedger(data)
+      const [ledgerData, overviewData] = await Promise.all([
+        apiFetch<RetainerLedger>(`/cases/${caseId}/retainer/ledger`),
+        apiFetch<CaseOverviewSummary>(`/cases/${caseId}/overview-summary`),
+      ])
+      setLedger(ledgerData)
+      setOverview(overviewData)
     } catch (e: any) {
       setError(e?.message || 'שגיאה')
     } finally {
@@ -1228,59 +1525,165 @@ function RetainerPanel({
 
   useEffect(() => {
     load()
+    setAnchorDate(caseItem.retainer_anchor_date?.slice(0, 10) ?? '')
+    setSnapshotMonth(
+      caseItem.retainer_snapshot_through_month ? String(caseItem.retainer_snapshot_through_month).slice(0, 7) : ''
+    )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [caseId, retainerReloadKey])
 
+  useEffect(() => {
+    setAnchorDate(caseItem.retainer_anchor_date?.slice(0, 10) ?? '')
+    setSnapshotMonth(
+      caseItem.retainer_snapshot_through_month ? String(caseItem.retainer_snapshot_through_month).slice(0, 7) : ''
+    )
+  }, [caseItem.retainer_anchor_date, caseItem.retainer_snapshot_through_month])
+
+  async function saveDates() {
+    setDatesSaveError(null)
+    setDatesSaving(true)
+    try {
+      const body: { retainer_anchor_date?: string; retainer_snapshot_through_month?: string } = {}
+      if (anchorDate) body.retainer_anchor_date = anchorDate
+      if (snapshotMonth) body.retainer_snapshot_through_month = `${snapshotMonth}-01`
+      await apiFetch(`/cases/${caseId}/retainer/dates`, { method: 'PATCH', body: JSON.stringify(body) })
+      await onCaseUpdated?.()
+      onRetainerChange?.()
+      await load()
+      onToast?.('נשמר')
+    } catch (e: any) {
+      setDatesSaveError(e?.message || 'שגיאה בשמירה')
+    } finally {
+      setDatesSaving(false)
+    }
+  }
+
+  async function toggleFreeze() {
+    setFreezeSaving(true)
+    try {
+      await apiFetch(`/cases/${caseId}/retainer/freeze`, {
+        method: 'POST',
+        body: JSON.stringify({ freeze: !isFrozen }),
+      })
+      await onCaseUpdated?.()
+      onRetainerChange?.()
+      await load()
+      onToast?.(isFrozen ? 'הקפאה בוטלה' : 'ריטיינר הוקפא')
+    } catch (e: any) {
+      onToast?.(e?.message || 'שגיאה')
+    } finally {
+      setFreezeSaving(false)
+    }
+  }
+
   if (isLoading) return <div className="text-right text-sm text-muted">טוען ריטיינר...</div>
   if (error) return <div className="text-right text-sm text-red-300">{error}</div>
-  if (!ledger) return null
+  if (!ledger || !overview) return null
 
   const cfg = ledger.config
   const monthlyDisplay = `${formatILS(cfg.monthly_base_net_ils)} + מע״מ ${cfg.vat_pct} = ${formatILS(cfg.monthly_gross_ils)}`
+  const chargedMonths = overview.retainer.charged_months_count ?? 0
+  const retainerCharged = toNumber(overview.retainer.retainer_charged_to_date_ils ?? 0)
 
   return (
-    <div className="space-y-6">
-      {/* Header summary cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+    <div className="space-y-6 text-right">
+      {/* Primary: charged months + theoretical charged */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="card-soft p-4">
-          <div className="text-xs text-muted mb-1">סכום ריטיינר חודשי</div>
-          <div className="font-semibold">{monthlyDisplay}</div>
+          <div className="text-xs text-muted mb-1">מספר חודשי חיוב שחויבו מעוגן</div>
+          <div className="font-semibold">{chargedMonths}</div>
         </div>
         <div className="card-soft p-4">
-          <div className="text-xs text-muted mb-1">עוגן חישוב</div>
-          <div className="font-semibold">{ledger.anchor_date}</div>
-        </div>
-        <div className="card-soft p-4">
-          <div className="text-xs text-muted mb-1">Snapshot עד חודש</div>
-          <div className="font-semibold">
-            {ledger.snapshot_through_month ? String(ledger.snapshot_through_month).slice(0, 7) : 'לא הוגדר'}
-          </div>
-        </div>
-        <div className="card-soft p-4">
-          <div className="text-xs text-muted mb-1">Snapshot שולם</div>
-          <div className="font-semibold">{formatILS(ledger.snapshot_paid_ils)}</div>
-        </div>
-        <div className="card-soft p-4">
-          <div className="text-xs text-muted mb-1">קרדיט ריטיינר נוכחי</div>
-          <div className="font-semibold">{formatILS(ledger.current_credit_ils)}</div>
+          <div className="text-xs text-muted mb-1">שכ״ט ששולם עד כה (תיאורטי)</div>
+          <div className="font-semibold">{formatILS(retainerCharged)}</div>
         </div>
       </div>
 
-      {/* Explanation block */}
+      {/* Monthly rate (read-only) */}
+      <div className="card-soft p-4">
+        <div className="text-xs text-muted mb-1">סכום ריטיינר חודשי</div>
+        <div className="font-semibold">{monthlyDisplay}</div>
+      </div>
+
+      {/* Editable: תאריך עוגן ריטיינר */}
+      <div className="card-soft p-4">
+        <div className="text-xs text-muted mb-1">תאריך עוגן ריטיינר</div>
+        <div className="flex flex-wrap items-center gap-2 mt-1">
+          <input
+            type="date"
+            className="input py-2 w-40"
+            value={anchorDate}
+            onChange={(e) => setAnchorDate(e.target.value)}
+            aria-label="תאריך עוגן ריטיינר"
+          />
+          <button
+            type="button"
+            onClick={saveDates}
+            disabled={datesSaving}
+            className="btn btn-primary btn-sm"
+          >
+            {datesSaving ? '...' : 'שמור'}
+          </button>
+        </div>
+      </div>
+
+      {/* Editable: Snapshot עד חודש (YYYY-MM) */}
+      <div className="card-soft p-4">
+        <div className="text-xs text-muted mb-1">Snapshot עד חודש (ראשון בחודש)</div>
+        <div className="flex flex-wrap items-center gap-2 mt-1">
+          <input
+            type="month"
+            className="input py-2 w-40"
+            value={snapshotMonth}
+            onChange={(e) => setSnapshotMonth(e.target.value)}
+            aria-label="Snapshot עד חודש"
+          />
+          <button
+            type="button"
+            onClick={saveDates}
+            disabled={datesSaving}
+            className="btn btn-primary btn-sm"
+          >
+            {datesSaving ? '...' : 'שמור'}
+          </button>
+        </div>
+      </div>
+      {datesSaveError ? (
+        <p className="text-sm text-red-400 text-right" role="alert">{datesSaveError}</p>
+      ) : null}
+
+      {/* Freeze toggle */}
+      <div className="card-soft p-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={toggleFreeze}
+            disabled={freezeSaving}
+            className={isFrozen ? 'btn btn-secondary' : 'btn btn-primary'}
+          >
+            {freezeSaving ? '...' : isFrozen ? 'בטל הקפאה' : 'הקפא חישוב ריטיינר'}
+          </button>
+          {isFrozen && frozenAt ? (
+            <span className="text-sm text-muted">מוקפא מאז {frozenAt}</span>
+          ) : null}
+        </div>
+      </div>
+
+      {/* Explanation */}
       <div className="card-soft p-4 bg-muted/20">
-        <p className="text-sm text-right text-muted leading-relaxed">
-          <strong>הסבר:</strong> ה־Snapshot מייצג סכום ריטיינר ששולם עבור תקופה שקדמה למערכת. מהחודש שאחרי &quot;Snapshot עד חודש&quot; מחושבים אקרואלים חודשיים. לשונית זו מציגה רק את ריטיינר השכר החודשי — לא הוצאות.
+        <p className="text-sm text-muted leading-relaxed">
+          <strong>הסבר:</strong> עוגן הריטיינר ו־Snapshot עד חודש קובעים מאיזה חודש מחושבים חודשי החיוב. כשמוקפא — החיוב לא מתקדם. לשונית זו מציגה רק את ריטיינר השכר החודשי — לא הוצאות.
         </p>
       </div>
 
-      {/* Monthly ledger table */}
+      {/* Monthly ledger table (optional, read-only) */}
       <div className="card-soft p-5">
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="text-right">
+          <div>
             <div className="font-semibold">פנקס ריטיינר חודשי</div>
             <div className="text-sm text-muted mt-1">נצבר, שולם ויתרת קרדיט לפי חודש</div>
           </div>
-          <button onClick={onOpenAddPayment} className="btn btn-primary">
+          <button type="button" onClick={onOpenAddPayment} className="btn btn-primary">
             הוסף תשלום ריטיינר
           </button>
         </div>
@@ -1428,23 +1831,33 @@ function FeesPanel({
   legacyFeeText,
   onOpenStageBilling,
   feesReloadKey,
+  onFeeEventDeleted,
+  onToast,
 }: {
   caseId: number
   historicalFeeStages: string[]
   legacyFeeText: string | null
   onOpenStageBilling: () => void
   feesReloadKey: number
+  onFeeEventDeleted?: () => void
+  onToast?: (msg: string) => void
 }) {
   const [items, setItems] = useState<FeeEvent[]>([])
+  const [unifiedSummary, setUnifiedSummary] = useState<DeductibleSummary | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [deleteModalEvent, setDeleteModalEvent] = useState<FeeEvent | null>(null)
 
   async function load() {
     setError(null)
     setIsLoading(true)
     try {
-      const data = await apiFetch<FeeEvent[]>(`/cases/${caseId}/fees/`)
+      const [data, summary] = await Promise.all([
+        apiFetch<FeeEvent[]>(`/cases/${caseId}/fees/`),
+        apiFetch<DeductibleSummary>(`/cases/${caseId}/deductible/summary`),
+      ])
       setItems(data)
+      setUnifiedSummary(summary)
     } catch (e: any) {
       setError(e?.message || 'שגיאה')
     } finally {
@@ -1457,12 +1870,8 @@ function FeesPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [caseId, feesReloadKey])
 
-  const totals = useMemo(() => {
-    const total = items.reduce((s, e) => s + toNumber(e.computed_amount_ils_gross), 0)
-    const covered = items.reduce((s, e) => s + toNumber(e.amount_covered_by_credit_ils_gross), 0)
-    const due = items.reduce((s, e) => s + toNumber(e.amount_due_cash_ils_gross), 0)
-    return { total, covered, due }
-  }, [items])
+  const feesByStages = unifiedSummary ? toNumber(unifiedSummary.fees_by_stages_ils) : 0
+  const feeDiff = unifiedSummary ? toNumber(unifiedSummary.fee_diff_ils) : 0
 
   if (isLoading) return <div className="text-right text-sm text-muted">טוען אירועי שכ״ט...</div>
   if (error) return <div className="text-right text-sm text-red-300">{error}</div>
@@ -1517,10 +1926,13 @@ function FeesPanel({
         <h3 className="text-sm font-semibold text-muted">שלבי שכ״ט עתידיים</h3>
       ) : null}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <MiniStat title="סה״כ שכ״ט" value={formatILS(totals.total)} />
-        <MiniStat title="כוסה בקרדיט" value={formatILS(totals.covered)} />
-        <MiniStat title="לתשלום במזומן" value={formatILS(totals.due)} />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <MiniStat title="סה״כ שכ״ט" value={formatILS(feesByStages)} />
+        <MiniStat
+          title="כוסה בקרדיט"
+          value={formatILS(feeDiff)}
+          valueClassName={feeDiff < 0 ? 'text-red-400' : undefined}
+        />
       </div>
 
       <div className="card-soft p-5">
@@ -1542,8 +1954,8 @@ function FeesPanel({
                 <th className="text-right py-3">שלב</th>
                 <th className="text-right py-3">סכום</th>
                 <th className="text-right py-3">כוסה בקרדיט</th>
-                <th className="text-right py-3">לתשלום</th>
                 <th className="text-right py-3">מקור</th>
+                <th className="text-right py-3 w-12">מחיקה</th>
               </tr>
             </thead>
             <tbody>
@@ -1560,9 +1972,19 @@ function FeesPanel({
                   </td>
                   <td className="py-3">{formatILS(e.computed_amount_ils_gross)}</td>
                   <td className="py-3">{formatILS(e.amount_covered_by_credit_ils_gross)}</td>
-                  <td className="py-3">{formatILS(e.amount_due_cash_ils_gross)}</td>
                   <td className="py-3">
                     <Badge label="חדש" variant="success" />
+                  </td>
+                  <td className="py-3">
+                    <button
+                      type="button"
+                      onClick={() => setDeleteModalEvent(e)}
+                      className="p-1.5 rounded text-muted hover:bg-red-500/20 hover:text-red-400"
+                      title="מחיקת אירוע (רכה)"
+                      aria-label="מחק אירוע"
+                    >
+                      🗑️
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -1575,6 +1997,111 @@ function FeesPanel({
               ) : null}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      {deleteModalEvent ? (
+        <DeleteFeeEventModal
+          caseId={caseId}
+          event={deleteModalEvent}
+          onClose={() => setDeleteModalEvent(null)}
+          onDeleted={async () => {
+            setDeleteModalEvent(null)
+            await load()
+            onFeeEventDeleted?.()
+            onToast?.('אירוע השכ״ט נמחק')
+          }}
+        />
+      ) : null}
+    </div>
+  )
+}
+
+function DeleteFeeEventModal({
+  caseId,
+  event,
+  onClose,
+  onDeleted,
+}: {
+  caseId: number
+  event: FeeEvent
+  onClose: () => void
+  onDeleted: () => void | Promise<void>
+}) {
+  const [reason, setReason] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  async function handleDelete() {
+    const trimmed = reason.trim()
+    if (trimmed.length === 0) {
+      setError('נא להזין סיבת המחיקה (חובה)')
+      return
+    }
+    if (trimmed.length > 500) {
+      setError('סיבת המחיקה עד 500 תווים')
+      return
+    }
+    setError(null)
+    setIsSubmitting(true)
+    try {
+      await apiFetch(`/cases/${caseId}/fees/${event.id}`, {
+        method: 'DELETE',
+        body: JSON.stringify({ delete_reason: trimmed }),
+      })
+      await onDeleted()
+      onClose()
+    } catch (e: any) {
+      setError(e?.message || 'שגיאה במחיקה')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="modal">
+      <div className="modal-overlay" />
+      <div className="modal-panel max-w-md">
+        <div className="text-right">
+          <div className="text-lg font-semibold">מחיקת אירוע שכ״ט</div>
+          <p className="text-sm text-muted mt-2">
+            האירוע יוסר מהחישובים אך יישמר לאנליטיקה.
+          </p>
+        </div>
+        <div className="mt-4">
+          <label htmlFor="delete-reason" className="block text-sm text-muted mb-1 text-right">
+            סיבת המחיקה (חובה, 1–500 תווים)
+          </label>
+          <textarea
+            id="delete-reason"
+            className="input w-full min-h-[80px] py-2 text-right"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            maxLength={500}
+            placeholder="למשל: הזנה כפולה"
+            dir="auto"
+          />
+          {error ? (
+            <p className="text-sm text-red-400 mt-2 text-right" role="alert">{error}</p>
+          ) : null}
+        </div>
+        <div className="mt-6 flex gap-3 justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="btn btn-secondary"
+            disabled={isSubmitting}
+          >
+            בטל
+          </button>
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={isSubmitting}
+            className="btn bg-red-600 hover:bg-red-700 text-white"
+          >
+            {isSubmitting ? 'מוחק...' : 'מחק'}
+          </button>
         </div>
       </div>
     </div>
@@ -1833,11 +2360,19 @@ function StageBillingModal({ caseId, onClose, onSaved }: { caseId: number; onClo
   )
 }
 
-function MiniStat({ title, value }: { title: string; value: string }) {
+function MiniStat({
+  title,
+  value,
+  valueClassName,
+}: {
+  title: string
+  value: string
+  valueClassName?: string
+}) {
   return (
     <div className="rounded-2xl border border-border/60 bg-card/40 p-4 text-right">
       <div className="text-xs text-muted">{title}</div>
-      <div className="mt-1 text-lg font-bold">{value}</div>
+      <div className={`mt-1 text-lg font-bold ${valueClassName ?? ''}`}>{value}</div>
     </div>
   )
 }

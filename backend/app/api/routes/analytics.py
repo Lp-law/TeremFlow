@@ -21,7 +21,7 @@ from app.schemas.analytics import (
     TimeSeriesPoint,
 )
 from app.services.deductible import q_ils
-from app.services.expenses import get_case_excess_remaining
+from app.services.unified import excess_remaining_ils as unified_excess_remaining_ils
 
 router = APIRouter()
 
@@ -38,7 +38,7 @@ def overview(
     if end_date < start_date:
         raise ValueError("end_date must be >= start_date")
 
-    cases_q = db.query(Case)
+    cases_q = db.query(Case).filter(Case.deleted_at.is_(None))
     if case_type:
         cases_q = cases_q.filter(Case.case_type == case_type)
     cases = cases_q.all()
@@ -108,7 +108,7 @@ def overview(
                 total_expenses_ils_gross=total_case,
                 attorney_fees_expenses_ils_gross=attorney_case,
                 other_expenses_ils_gross=other_case,
-                deductible_remaining_ils_gross=get_case_excess_remaining(db, c),
+                deductible_remaining_ils_gross=unified_excess_remaining_ils(db, c),
             )
         )
 
@@ -121,7 +121,7 @@ def overview(
 
     aggregate_remaining = q_ils(
         sum(
-            (get_case_excess_remaining(db, c) for c in cases if c.status == CaseStatus.OPEN),
+            (unified_excess_remaining_ils(db, c) for c in cases if c.status == CaseStatus.OPEN),
             Decimal("0.00"),
         )
     )

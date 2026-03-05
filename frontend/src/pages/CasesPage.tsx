@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { BackButton } from '../components/BackButton'
 import { apiFetch } from '../lib/api'
 import { downloadTextFile, toCsv } from '../lib/csv'
+import { formatILS } from '../lib/format'
 import type { CaseOut, CaseStatus, CaseType } from '../lib/types'
 
 /** Labels for current_procedure_stage (fee event type) in list table. */
@@ -82,6 +83,10 @@ export function CasesPage() {
   const [bulkSaving, setBulkSaving] = useState(false)
   const [bulkError, setBulkError] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+  const [deleteModalCase, setDeleteModalCase] = useState<CaseOut | null>(null)
+  const [deleteReason, setDeleteReason] = useState('')
+  const [deleteSaving, setDeleteSaving] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   async function load() {
     setError(null)
@@ -110,19 +115,45 @@ export function CasesPage() {
     )
   }, [items, query])
 
+  function displayCaseName(c: CaseOut): string {
+    return c.case_name?.trim() ? `${c.case_name.trim()} (${c.case_reference})` : c.case_reference
+  }
+
   function exportCasesCsv() {
     setError(null)
     const rows = filtered.map((c) => ({
-      case_reference: c.case_reference,
-      case_name: c.case_name ?? '',
+      case_name_display: displayCaseName(c),
       current_procedure_stage: formatProcedureStage(c.current_procedure_stage),
+      excess_remaining_ils_gross: String(c.excess_remaining_ils_gross ?? ''),
       status: c.status === 'OPEN' ? 'פתוח' : c.status === 'CLOSED' ? 'סגור' : c.status,
       case_type: CASE_TYPE_LABEL[c.case_type] ?? c.case_type,
     }))
-    const columns = ['case_reference', 'case_name', 'current_procedure_stage', 'status', 'case_type']
+    const columns = ['case_name_display', 'current_procedure_stage', 'excess_remaining_ils_gross', 'status', 'case_type']
     const csv = toCsv(rows, columns, ',')
     const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
     downloadTextFile(`teremflow-cases-${ts}.csv`, csv)
+  }
+
+  async function confirmDeleteCase() {
+    if (!deleteModalCase) return
+    const reason = deleteReason.trim().slice(0, 200)
+    setDeleteError(null)
+    setDeleteSaving(true)
+    try {
+      await apiFetch(`/cases/${deleteModalCase.id}`, {
+        method: 'DELETE',
+        body: JSON.stringify(reason ? { delete_reason: reason } : {}),
+      })
+      setDeleteModalCase(null)
+      setDeleteReason('')
+      setToast('התיק הוסר מהרשימה')
+      setTimeout(() => setToast(null), 4000)
+      setItems((prev) => prev.filter((c) => c.id !== deleteModalCase.id))
+    } catch (e: any) {
+      setDeleteError(e?.message || 'שגיאה במחיקה')
+    } finally {
+      setDeleteSaving(false)
+    }
   }
 
   function toggleSelect(id: number) {
@@ -277,10 +308,12 @@ export function CasesPage() {
                         aria-label="בחר הכל"
                       />
                     </th>
-                    <th className="text-right py-3">מספר תיק</th>
                     <th className="text-right py-3">שם תיק</th>
                     <th className="text-right py-3">שלב ההליך הנוכחי</th>
+                    <th className="text-right py-3">יתרת אקסס</th>
                     <th className="text-right py-3">סטטוס</th>
+                    <th className="text-right py-3">סוג תיק</th>
+                    <th className="text-right py-3 w-12">מחיקה</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -294,27 +327,39 @@ export function CasesPage() {
                           aria-label={`בחר תיק ${c.case_reference}`}
                         />
                       </td>
-                      <td className="py-3 text-muted text-xs">
-                        {c.case_reference}
-                      </td>
                       <td className="py-3">
                         <Link to={`/cases/${c.id}`} className="text-primary hover:underline font-medium">
-                          {c.case_name?.trim()
-                            ? `${c.case_name.trim()} ( ${c.case_reference} )`
-                            : c.case_reference}
+                          {displayCaseName(c)}
                         </Link>
                       </td>
                       <td className="py-3">
                         {formatProcedureStage(c.current_procedure_stage)}
                       </td>
+                      <td className="py-3">{formatILS(c.excess_remaining_ils_gross ?? 0)}</td>
                       <td className="py-3">
                         {c.status === 'OPEN' ? 'פתוח' : c.status === 'CLOSED' ? 'סגור' : 'לא הוגדר'}
+                      </td>
+                      <td className="py-3">{CASE_TYPE_LABEL[c.case_type] ?? c.case_type}</td>
+                      <td className="py-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDeleteModalCase(c)
+                            setDeleteReason('')
+                            setDeleteError(null)
+                          }}
+                          className="p-1.5 rounded text-muted hover:bg-red-500/20 hover:text-red-400"
+                          title="מחיקת תיק (מחיקה רכה)"
+                          aria-label="מחק תיק"
+                        >
+                          🗑️
+                        </button>
                       </td>
                     </tr>
                   ))}
                   {filtered.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="py-10 text-center text-muted">
+                      <td colSpan={7} className="py-10 text-center text-muted">
                         אין תוצאות
                       </td>
                     </tr>
@@ -325,6 +370,58 @@ export function CasesPage() {
           ) : null}
         </div>
       </div>
+
+      {deleteModalCase ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className="w-full max-w-md rounded-3xl border border-border/60 bg-surface p-6 shadow-card">
+            <div className="text-right">
+              <div className="text-xl font-bold">מחיקת תיק</div>
+              <p className="text-sm text-muted mt-2">
+                התיק יוסר מהמערכת (מחיקה רכה). ניתן לשמור סיבה (אופציונלי).
+              </p>
+            </div>
+            <div className="mt-4">
+              <label htmlFor="delete-case-reason" className="block text-sm text-muted mb-1 text-right">
+                סיבה (אופציונלי, עד 200 תווים)
+              </label>
+              <input
+                id="delete-case-reason"
+                type="text"
+                className="w-full h-12 rounded-xl bg-background border border-border/70 px-4 text-text placeholder:text-placeholder outline-none focus:ring-2 focus:ring-primary/60"
+                placeholder="למשל: כפילות"
+                value={deleteReason}
+                onChange={(e) => setDeleteReason(e.target.value.slice(0, 200))}
+                maxLength={200}
+              />
+            </div>
+            {deleteError ? (
+              <div className="mt-3 text-sm text-red-300 text-right" role="alert">{deleteError}</div>
+            ) : null}
+            <div className="flex gap-3 justify-end mt-6">
+              <button
+                type="button"
+                onClick={() => {
+                  setDeleteModalCase(null)
+                  setDeleteReason('')
+                  setDeleteError(null)
+                }}
+                className="btn btn-secondary"
+                disabled={deleteSaving}
+              >
+                ביטול
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteCase}
+                className="btn bg-red-600 hover:bg-red-700 text-white"
+                disabled={deleteSaving}
+              >
+                {deleteSaving ? 'מוחק…' : 'מחק'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {showBulkEditModal ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
