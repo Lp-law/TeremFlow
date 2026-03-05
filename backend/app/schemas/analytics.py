@@ -140,6 +140,15 @@ class BranchCaseTypeFeeAverageRow(BaseModel):
     avg_expenses_ils: Decimal
 
 
+class CaseTypeFeeAverageRow(BaseModel):
+    """Per-case-type averages for T3 report."""
+    case_type: str
+    cases_count: int
+    avg_stage_fee_ils: Decimal
+    avg_retainer_fee_ils: Decimal
+    avg_expenses_ils: Decimal
+
+
 class AnalyticsV2Response(BaseModel):
     filters: AnalyticsV2Filters
     kpis: AnalyticsV2KPIs
@@ -148,5 +157,6 @@ class AnalyticsV2Response(BaseModel):
     extra_metrics: ExtraMetrics | None = None
     branch_fee_averages: list[BranchFeeAverageRow] = []
     branch_case_type_fee_averages: list[BranchCaseTypeFeeAverageRow] = []
+    case_type_fee_averages: list[CaseTypeFeeAverageRow] = []
 
 

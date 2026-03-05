@@ -4,7 +4,7 @@ import { BackButton } from '../components/BackButton'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { apiDownload, apiFetch } from '../lib/api'
 import { formatILS, formatDateYMD } from '../lib/format'
-import type { AnalyticsV2Response } from '../lib/types'
+import type { AnalyticsV2Response, ClientReportBrand } from '../lib/types'
 
 const CASE_TYPE_LABEL: Record<string, string> = {
   COURT: 'תיק ביהמ"ש',
@@ -56,7 +56,12 @@ export function AnalyticsPage() {
   const [reportBranch, setReportBranch] = useState<string>('')
   const [reportBranchNull, setReportBranchNull] = useState(false)
   const [reportFormat, setReportFormat] = useState<'pdf' | 'docx'>('pdf')
-  const [reportLogoUrl, setReportLogoUrl] = useState('')
+  const [reportLogoBase64, setReportLogoBase64] = useState<string | null>(null)
+  const [reportLogoPaste, setReportLogoPaste] = useState('')
+  const [reportPrimaryHex, setReportPrimaryHex] = useState('#1F4E79')
+  const [reportAccentHex, setReportAccentHex] = useState('#2E75B6')
+  const [reportHeaderBgHex, setReportHeaderBgHex] = useState('')
+  const [reportHeaderTextHex, setReportHeaderTextHex] = useState('#FFFFFF')
 
   useEffect(() => {
     apiFetch<(string | null)[]>('/analytics/v2/branches').then(setBranches).catch(() => setBranches([]))
@@ -88,11 +93,34 @@ export function AnalyticsPage() {
     pct: r.pct,
   })) ?? []
 
+  function readFileAsBase64(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader()
+      r.onload = () => {
+        const dataUrl = r.result as string
+        resolve(dataUrl)
+      }
+      r.onerror = () => reject(new Error('Failed to read file'))
+      r.readAsDataURL(file)
+    })
+  }
+
   async function exportClientReport() {
     setReportLoading(true)
     setReportToast(null)
     try {
       const branch_name = reportBranchNull ? null : (reportBranch || null)
+      const logo_base64 = reportLogoBase64 || (reportLogoPaste.trim() || null)
+      const brand: ClientReportBrand | null =
+        logo_base64 || reportPrimaryHex !== '#1F4E79' || reportAccentHex !== '#2E75B6' || reportHeaderBgHex || reportHeaderTextHex !== '#FFFFFF'
+          ? {
+              logo_base64: logo_base64 || undefined,
+              primary_hex: reportPrimaryHex,
+              accent_hex: reportAccentHex,
+              header_bg_hex: reportHeaderBgHex || undefined,
+              header_text_hex: reportHeaderTextHex,
+            }
+          : null
       const body = {
         template_id: reportTemplate,
         format: reportFormat,
@@ -104,7 +132,7 @@ export function AnalyticsPage() {
           branch_name: branch_name,
           branch_is_null: reportBranchNull || null,
         },
-        brand: reportLogoUrl ? { logo_url: reportLogoUrl } : null,
+        brand,
       }
       const { blob, filename } = await apiDownload('/analytics/client-report', {
         method: 'POST',
@@ -223,8 +251,69 @@ export function AnalyticsPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm text-muted mb-1 text-right">כתובת לוגו (אופציונלי)</label>
-                  <input className="input w-full" type="url" placeholder="https://..." value={reportLogoUrl} onChange={(e) => setReportLogoUrl(e.target.value)} />
+                  <label className="block text-sm text-muted mb-1 text-right">לוגו (אופציונלי)</label>
+                  <div className="flex flex-col gap-2">
+                    <input
+                      className="input w-full text-sm"
+                      type="file"
+                      accept="image/png,image/jpeg,image/gif,image/webp"
+                      onChange={async (e) => {
+                        const f = e.target.files?.[0]
+                        if (f) {
+                          try {
+                            const b64 = await readFileAsBase64(f)
+                            setReportLogoBase64(b64)
+                            setReportLogoPaste('')
+                          } catch {
+                            setReportToast('שגיאה בקריאת הקובץ')
+                          }
+                        } else {
+                          setReportLogoBase64(null)
+                        }
+                      }}
+                    />
+                    {reportLogoBase64 ? (
+                      <div className="flex items-center gap-2 text-right text-sm text-muted">
+                        <span>לוגו נטען</span>
+                        <button type="button" className="text-primary underline" onClick={() => { setReportLogoBase64(null); setReportLogoPaste('') }}>
+                          הסר
+                        </button>
+                      </div>
+                    ) : null}
+                    <input
+                      className="input w-full text-sm"
+                      type="text"
+                      placeholder="או הדבק base64 / data URL"
+                      value={reportLogoPaste}
+                      onChange={(e) => { setReportLogoPaste(e.target.value); setReportLogoBase64(null) }}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-sm text-muted mb-1 text-right">צבע מותג ראשי</label>
+                    <div className="flex gap-2 items-center">
+                      <input
+                        type="color"
+                        className="h-10 w-14 rounded border border-border cursor-pointer"
+                        value={reportPrimaryHex}
+                        onChange={(e) => setReportPrimaryHex(e.target.value)}
+                      />
+                      <input className="input flex-1 font-mono text-sm" type="text" value={reportPrimaryHex} onChange={(e) => setReportPrimaryHex(e.target.value)} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-muted mb-1 text-right">צבע כותרת טקסט</label>
+                    <div className="flex gap-2 items-center">
+                      <input
+                        type="color"
+                        className="h-10 w-14 rounded border border-border cursor-pointer"
+                        value={reportHeaderTextHex}
+                        onChange={(e) => setReportHeaderTextHex(e.target.value)}
+                      />
+                      <input className="input flex-1 font-mono text-sm" value={reportHeaderTextHex} onChange={(e) => setReportHeaderTextHex(e.target.value)} />
+                    </div>
+                  </div>
                 </div>
               </div>
               <div className="mt-6 flex gap-2 justify-end">

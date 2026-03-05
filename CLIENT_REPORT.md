@@ -4,12 +4,14 @@
 
 ### Backend
 - **`backend/requirements.txt`** — Added: matplotlib, python-docx, reportlab, Jinja2.
-- **`backend/app/schemas/client_report.py`** — New: `ClientReportFilters`, `ClientReportBrand`, `ClientReportRequest`.
-- **`backend/app/services/analytics_report.py`** — New: `_chart_closing_stage_png`, `_narrative_bullets`, `build_report_pdf`, `build_report_docx`, `build_client_report`. Uses ReportLab for PDF (RTL alignment), python-docx for DOCX, matplotlib for closing-stage bar chart.
-- **`backend/app/api/routes/analytics.py`** — Extracted `compute_analytics_v2_response` (used by GET /v2 and by client-report). Added `POST /analytics/client-report` (parses body, resolves branch from branch_is_null, calls compute + build_client_report, returns file).
+- **`backend/app/schemas/client_report.py`** — `ClientReportFilters`, `ClientReportRequest`. **`ClientReportBrand`:** `logo_base64` (preferred, no URL fetch), `primary_hex`, `accent_hex`, `header_bg_hex`, `header_text_hex`.
+- **`backend/app/schemas/analytics.py`** — Added `CaseTypeFeeAverageRow` and `case_type_fee_averages` to v2 response (for T3 report).
+- **`backend/app/services/analytics_report.py`** — Logo from base64 (no SSRF). Brand colors on PDF/DOCX (title, section headers, table headers, chart bars). **T1:** KPI → narrative → closing chart → branch×case_type table → branch fee table. **T2:** KPI → big branch fee table → volume table → mini insights (top branch by volume, by avg fee) → smaller chart. **T3:** KPI → case_type summary table → narrative → closing chart only when CLOSED data present.
+- **`backend/app/api/routes/analytics.py`** — `compute_analytics_v2_response` now computes `case_type_fee_averages`; client-report uses `brand` with logo_base64 and hex colors.
 
 ### Frontend
-- **`frontend/src/pages/AnalyticsPage.tsx`** — Button "ייצא דו״ח ללקוח", modal wizard (template T1/T2/T3, date range default 90 days, case_type, status, branch, "רק ללא סניף", format PDF/Word, optional logo URL). On confirm: POST /analytics/client-report, download file via blob + Content-Disposition filename, toast success/error.
+- **`frontend/src/pages/AnalyticsPage.tsx`** — Report modal: template, dates, filters, format; **logo:** file upload (read as base64) or paste base64/data URL; **צבע מותג:** primary hex + header text hex pickers. Sends `brand.logo_base64`, `primary_hex`, `accent_hex`, `header_text_hex`.
+- **`frontend/src/lib/types.ts`** — `ClientReportBrand`, `CaseTypeFeeAverageRow`; `AnalyticsV2Response.case_type_fee_averages`.
 
 ---
 
@@ -31,12 +33,18 @@ Content-Type: application/json
     "branch_is_null": false
   },
   "brand": {
-    "logo_url": null
+    "logo_base64": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+    "primary_hex": "#1F4E79",
+    "accent_hex": "#2E75B6",
+    "header_bg_hex": null,
+    "header_text_hex": "#FFFFFF"
   }
 }
 ```
 
-With "ללא סניף" only: `"branch_name": null, "branch_is_null": true`.
+- **logo_base64:** Preferred over any URL. Data URL (`data:image/...;base64,...`) or raw base64. Backend does **not** fetch external URLs (SSRF-safe).
+- **primary_hex / accent_hex / header_bg_hex / header_text_hex:** Optional; defaults: primary `#1F4E79`, accent `#2E75B6`, header text `#FFFFFF`; `header_bg_hex` defaults to primary when null.
+- With "ללא סניף" only: `"branch_name": null, "branch_is_null": true`.
 
 ---
 
@@ -50,22 +58,43 @@ With "ללא סניף" only: `"branch_name": null, "branch_is_null": true`.
 
 ## PDF layout (screenshot-like description)
 
-1. **Title (RTL):** "דו״ח סיכום פעילות" (or T2/T3 title), right-aligned.
-2. **Subtitle:** Period and denominator, e.g. "תקופה: 2025-01-01 – 2025-12-31 | תיקים בפילטר: 42".
-3. **מפתחות ביצוע:** Right-aligned lines: שכ״ט ממוצע לפי שלבים, שכ״ט ממוצע לפי ריטיינר, הוצאות ממוצעות לתיק, and (when applicable) שלב סיום ממוצע with denominator.
-4. **סיכום:** Bullet list of auto-generated narrative sentences (X תיקים, ממוצעים, שלב שכיח, סניף עם נפח גבוה).
-5. **Chart:** "התפלגות שלב סיום (תיקים סגורים)" — horizontal bar chart (matplotlib PNG), Hebrew labels.
-6. **Table:** "נפח לפי סניף וסוג תיק" — columns סניף, סוג תיק, כמות.
-7. **Table:** "שכ״ט ממוצע לפי סניף" — columns סניף, תיקים, שכ״ט שלבים, שכ״ט ריטיינר, הוצאות.
+- **Header:** If `brand.logo_base64` is set, logo appears **top-right** (PDF) or at **top** (DOCX). Title and period below.
+- **Brand colors:** Title and section headings use `primary_hex`. Table header row uses `header_bg_hex` (default primary) and `header_text_hex` (default white). Chart bars use `primary_hex`; axis labels neutral gray; clean layout, light grid.
+- All text and tables are RTL. No case IDs or internal-only fields.
 
-All text and tables use right alignment (RTL-friendly). No case IDs or internal-only fields.
+### T1 — דו״ח סיכום פעילות (first page)
+
+1. **Title bar:** "דו״ח סיכום פעילות" (brand color) + optional logo top-right.
+2. **Subtitle:** "תקופה: … | תיקים בפילטר: N".
+3. **מפתחות ביצוע:** שכ״ט ממוצע לפי שלבים, ריטיינר, הוצאות ממוצעות, שלב סיום ממוצע (when applicable).
+4. **סיכום:** Bullet narrative (תיקים, ממוצעים, שלב שכיח, סניף נפח גבוה).
+5. **Chart:** "התפלגות שלב סיום (תיקים סגורים)" — horizontal bar chart.
+6. **Table:** "נפח לפי סניף וסוג תיק" (סניף, סוג תיק, כמות).
+7. **Table:** "שכ״ט ממוצע לפי סניף" (סניף, תיקים, שכ״ט שלבים, ריטיינר, הוצאות).
+
+### T2 — דו״ח סניפים (first page)
+
+1. Title + period (same as above).
+2. **מפתחות ביצוע** (same KPI row).
+3. **שכ״ט ממוצע לפי סניף** — **large table first** (all branches).
+4. **נפח תיקים לפי סניף וסוג תיק** — full volume table.
+5. **תובנות:** Top branch by volume; top branch by avg stage fee (mini insights).
+6. **התפלגות שלב סיום** — smaller chart (optional).
+
+### T3 — דו״ח סוגי תיקים (first page)
+
+1. Title + period.
+2. **מפתחות ביצוע** (same).
+3. **סיכום לפי סוג תיק** — table: סוג תיק, תיקים, שכ״ט שלבים, שכ״ט ריטיינר, הוצאות (from `case_type_fee_averages`).
+4. **סיכום:** Narrative bullets.
+5. **התפלגות שלב סיום** — **only when** filter/data include CLOSED cases (i.e. when `distributions.closing_stage` is non-empty).
 
 ---
 
 ## Brand colors + logo
 
-- **Brand:** Request body can include `brand.logo_url`. The current implementation does not embed the logo image in the PDF/DOCX (to avoid fetching external URLs in the backend). The field is accepted for future use (e.g. download logo and embed). To add: resolve logo_url to bytes, then add an Image in ReportLab / docx and place it in the header.
-- **Colors:** ReportLab uses default grey/steelblue for table header and chart. To make them configurable, extend `ClientReportBrand` with e.g. `primary_hex`, `header_bg_hex` and pass them into `build_report_pdf` / `build_report_docx`.
+- **Logo:** Use `brand.logo_base64` only (data URL or raw base64). Backend **does not** fetch external URLs (SSRF-safe).
+- **Colors:** `primary_hex`, `accent_hex`, `header_bg_hex`, `header_text_hex` applied to PDF/DOCX title, section headers, table header row, and chart bar color.
 
 ---
 

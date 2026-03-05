@@ -26,6 +26,7 @@ from app.schemas.analytics import (
     BranchFeeAverageRow,
     ByBranchRow,
     ByCaseTypeRow,
+    CaseTypeFeeAverageRow,
     ClosingStageIndexRow,
     ClosingStageRow,
     ExpensesByCaseRow,
@@ -312,6 +313,7 @@ def compute_analytics_v2_response(
             ),
             branch_fee_averages=[],
             branch_case_type_fee_averages=[],
+            case_type_fee_averages=[],
         )
 
     if not cases:
@@ -434,6 +436,28 @@ def compute_analytics_v2_response(
         for (bn, ct), count in sorted(branch_case_type_map.items(), key=lambda x: (-x[1], str(x[0][0] or ""), x[0][1]))
     ]
 
+    # Case-type fee averages (for T3 report)
+    ct_to_data: dict[str, list[tuple[Case, dict]]] = defaultdict(list)
+    for c, u in case_unified:
+        ct_val = c.case_type.value if hasattr(c.case_type, "value") else str(c.case_type)
+        ct_to_data[ct_val].append((c, u))
+    case_type_fee_rows: list[CaseTypeFeeAverageRow] = []
+    for ct in sorted(ct_to_data.keys(), key=lambda x: (-len(ct_to_data[x]), x)):
+        group = ct_to_data[ct]
+        cnt = len(group)
+        s_stage = sum(Decimal(str(u["fees_by_stages_ils"])) for _, u in group)
+        s_ret = sum(Decimal(str(u["retainer_charged_to_date_ils"])) for _, u in group)
+        s_exp = sum(Decimal(str(u["expenses_total_ils"])) for _, u in group)
+        case_type_fee_rows.append(
+            CaseTypeFeeAverageRow(
+                case_type=ct,
+                cases_count=cnt,
+                avg_stage_fee_ils=q_ils(s_stage / cnt) if cnt else Decimal("0.00"),
+                avg_retainer_fee_ils=q_ils(s_ret / cnt) if cnt else Decimal("0.00"),
+                avg_expenses_ils=q_ils(s_exp / cnt) if cnt else Decimal("0.00"),
+            )
+        )
+
     # Totals by_branch and by_case_type
     by_branch_map: dict[str | None, int] = defaultdict(int)
     by_case_type_map: dict[str, int] = defaultdict(int)
@@ -462,6 +486,7 @@ def compute_analytics_v2_response(
         extra_metrics=extra_metrics,
         branch_fee_averages=branch_fee_rows,
         branch_case_type_fee_averages=branch_case_type_fee_rows,
+        case_type_fee_averages=case_type_fee_rows,
     )
 
 

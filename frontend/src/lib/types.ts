@@ -297,6 +297,14 @@ export type BranchCaseTypeFeeAverageRow = {
   avg_expenses_ils: string | number
 }
 
+export type CaseTypeFeeAverageRow = {
+  case_type: string
+  cases_count: number
+  avg_stage_fee_ils: string | number
+  avg_retainer_fee_ils: string | number
+  avg_expenses_ils: string | number
+}
+
 export type AnalyticsV2Response = {
   filters: AnalyticsV2Filters
   kpis: AnalyticsV2KPIs
@@ -311,6 +319,16 @@ export type AnalyticsV2Response = {
   extra_metrics?: ExtraMetrics | null
   branch_fee_averages?: BranchFeeAverageRow[]
   branch_case_type_fee_averages?: BranchCaseTypeFeeAverageRow[]
+  case_type_fee_averages?: CaseTypeFeeAverageRow[]
+}
+
+/** Branding for client report (logo base64 preferred; no URL fetch). */
+export type ClientReportBrand = {
+  logo_base64?: string | null
+  primary_hex?: string
+  accent_hex?: string
+  header_bg_hex?: string | null
+  header_text_hex?: string
 }
 
 
