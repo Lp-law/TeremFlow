@@ -15,6 +15,7 @@ from app.models.fee_event import FeeEvent
 from app.services.boi_fx import FxLookupError, get_usd_ils_rate
 from app.services.retainer import ensure_accruals_up_to, get_retainer_anchor_date
 from app.services.unified import (
+    _parse_override_to_decimal,
     excess_remaining_ils as unified_excess_remaining_ils,
     get_unified_summary,
 )
@@ -308,6 +309,8 @@ _MONEY_OVERRIDE_KEYS = frozenset({
     "excess_remaining_override",
     "fee_diff_override",
 })
+# Only this key may be negative (fee_diff_ils = fees_by_stages - retainer_charged).
+_FEE_DIFF_OVERRIDE_KEY = "fee_diff_override"
 
 
 def _override_value_to_storage(v: Any) -> Any:
@@ -324,6 +327,7 @@ def _override_value_to_storage(v: Any) -> Any:
 def update_case_manual_overrides(db: Session, *, case_id: int, overrides: dict[str, Any]) -> Case:
     """Merge overrides into case.manual_overrides_json. Keys with None remove the override.
     Money values are stored as decimal strings (e.g. "1234.56") to preserve precision.
+    Rejects negative values for all money overrides except fee_diff_override; rejects invalid numbers.
     """
     c = get_case_if_not_deleted(db, case_id)
     if not c:
@@ -332,11 +336,22 @@ def update_case_manual_overrides(db: Session, *, case_id: int, overrides: dict[s
     for k, v in overrides.items():
         if v is None:
             current.pop(k, None)
+            continue
+        if k in _MONEY_OVERRIDE_KEYS:
+            parsed = _parse_override_to_decimal(v)
+            if parsed is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid number for {k}",
+                )
+            if k != _FEE_DIFF_OVERRIDE_KEY and parsed < Decimal("0"):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Negative value not allowed for {k}",
+                )
+            current[k] = _override_value_to_storage(parsed)
         else:
-            if k in _MONEY_OVERRIDE_KEYS:
-                current[k] = _override_value_to_storage(v)
-            else:
-                current[k] = v
+            current[k] = v
     c.manual_overrides_json = current if current else None
     db.commit()
     db.refresh(c)

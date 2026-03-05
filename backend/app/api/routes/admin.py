@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_auth
+from app.api.deps import require_admin, require_auth
 from app.api.routes.backups import build_backup_zip
 from app.core.config import settings
 from app.db.session import get_db
@@ -64,7 +64,7 @@ def wipe_case_data_status(db: Session = Depends(get_db), _=Depends(require_auth)
 
 @router.get("/export-backup")
 def admin_export_backup(
-    user: User = Depends(require_auth),
+    user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> Response:
     """GET backup (same content as POST /backups/export). Auth required. Returns ZIP with all tables as CSV."""

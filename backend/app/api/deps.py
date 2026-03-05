@@ -27,6 +27,14 @@ def require_auth(user: User = Depends(get_current_user)) -> User:
     return user
 
 
+def require_admin(user: User = Depends(require_auth)) -> User:
+    """Require authenticated user with ADMIN role (for admin-only endpoints)."""
+    from app.models.enums import UserRole
+    if user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin only")
+    return user
+
+
 def get_optional_user(request: Request, db: Session = Depends(get_db)) -> User | None:
     """
     Best-effort auth: returns User if cookie is present & valid, otherwise None.
