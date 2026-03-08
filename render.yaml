@@ -50,7 +50,27 @@ services:
     schedule: "0 6 * * *" # daily 06:00 UTC
     buildCommand: ""
     startCommand: >
-      node -e "const api=process.env.API_URL; const tok=process.env.TASKS_DAILY_SECRET; if(!api){console.error('Missing API_URL'); process.exit(1)} if(!tok){console.error('Missing TASKS_DAILY_SECRET'); process.exit(1)} fetch(api + '/tasks/daily',{method:'POST',headers:{'X-Tasks-Token':tok}}).then(async r=>{const t=await r.text(); console.log(t); if(!r.ok){console.error('HTTP ' + r.status); process.exit(1)} process.exit(0)}).catch(e=>{console.error(e);process.exit(1)})"
+      node -e "
+      const api=process.env.API_URL;
+      const tok=process.env.TASKS_DAILY_SECRET;
+      if(!api){console.error('Missing API_URL'); process.exit(1);}
+      if(!tok){console.error('Missing TASKS_DAILY_SECRET'); process.exit(1);}
+      const url=api+'/tasks/daily';
+      const opts={method:'POST',headers:{'X-Tasks-Token':tok}};
+      const maxAttempts=3;
+      const retryDelayMs=55000;
+      async function run(attempt){
+        const r=await fetch(url,opts);
+        const t=await r.text();
+        console.log(t);
+        if(r.ok){process.exit(0);}
+        const retryable=(r.status===429||r.status>=500)&&attempt<maxAttempts;
+        if(retryable){console.error('HTTP '+r.status+' - retrying in 55s (attempt '+(attempt+1)+'/'+maxAttempts+')'); await new Promise(x=>setTimeout(x,retryDelayMs)); return run(attempt+1);}
+        console.error('HTTP '+r.status);
+        process.exit(1);
+      }
+      run(0).catch(e=>{console.error(e);process.exit(1);});
+      "
     envVars:
       - key: API_URL
         value: https://teremflow-api.onrender.com
