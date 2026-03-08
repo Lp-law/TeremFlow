@@ -14,12 +14,9 @@ class ClientReportFilters(BaseModel):
 
 
 class ClientReportBrand(BaseModel):
-    """Branding for client report. logo_base64 preferred (no external URL fetch = no SSRF)."""
-    logo_base64: str | None = None  # data URL or raw base64 image
-    primary_hex: str = "#1F4E79"
-    accent_hex: str = "#2E75B6"
-    header_bg_hex: str | None = None  # default: primary_hex
-    header_text_hex: str = "#FFFFFF"
+    """Optional branding overrides. Report uses fixed Light Navy + Gold palette if not provided."""
+    primary_hex: str | None = None  # default #1F3B63
+    accent_hex: str | None = None   # default #C9A227
 
 
 class ClientReportRequest(BaseModel):

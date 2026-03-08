@@ -3,15 +3,15 @@
 ## Files changed
 
 ### Backend
-- **`backend/requirements.txt`** — Added: matplotlib, python-docx, reportlab, Jinja2.
-- **`backend/app/schemas/client_report.py`** — `ClientReportFilters`, `ClientReportRequest`. **`ClientReportBrand`:** `logo_base64` (preferred, no URL fetch), `primary_hex`, `accent_hex`, `header_bg_hex`, `header_text_hex`.
-- **`backend/app/schemas/analytics.py`** — Added `CaseTypeFeeAverageRow` and `case_type_fee_averages` to v2 response (for T3 report).
-- **`backend/app/services/analytics_report.py`** — Logo from base64 (no SSRF). Brand colors on PDF/DOCX (title, section headers, table headers, chart bars). **T1:** KPI → narrative → closing chart → branch×case_type table → branch fee table. **T2:** KPI → big branch fee table → volume table → mini insights (top branch by volume, by avg fee) → smaller chart. **T3:** KPI → case_type summary table → narrative → closing chart only when CLOSED data present.
-- **`backend/app/api/routes/analytics.py`** — `compute_analytics_v2_response` now computes `case_type_fee_averages`; client-report uses `brand` with logo_base64 and hex colors.
+- **`backend/requirements.txt`** — matplotlib, python-docx, reportlab, Jinja2.
+- **`backend/app/schemas/client_report.py`** — `ClientReportFilters`, `ClientReportRequest`. **`ClientReportBrand`** optional: `primary_hex`, `accent_hex` only (no logo). Report uses fixed **Light Navy + Gold** palette when brand not provided.
+- **`backend/app/schemas/analytics.py`** — `CaseTypeFeeAverageRow`, `case_type_fee_averages` in v2 response (T3).
+- **`backend/app/services/analytics_report.py`** — **PDF:** Full-width title bar (navy bg, white text). Section headers: navy text + thin gold underline. Tables: header row navy/white, zebra rows subtle_gray, light borders. Chart: navy bars, max bar gold, body_text axes. **DOCX:** Navy headings + gold underline, header row shading + white text. **T1:** KPIs → narrative → closing chart → branch×case_type → branch fee table. **T2:** KPIs → big branch fee table → volume table → top-3 insights (volume, avg stage fee, avg retainer) → closing chart **only if CLOSED cases exist**. **T3:** KPIs → case_type averages table → closing chart (when CLOSED) → optional branch summary table.
+- **`backend/app/api/routes/analytics.py`** — Client-report accepts optional `brand`; builds report with fixed palette (or brand overrides).
 
 ### Frontend
-- **`frontend/src/pages/AnalyticsPage.tsx`** — Report modal: template, dates, filters, format; **logo:** file upload (read as base64) or paste base64/data URL; **צבע מותג:** primary hex + header text hex pickers. Sends `brand.logo_base64`, `primary_hex`, `accent_hex`, `header_text_hex`.
-- **`frontend/src/lib/types.ts`** — `ClientReportBrand`, `CaseTypeFeeAverageRow`; `AnalyticsV2Response.case_type_fee_averages`.
+- **`frontend/src/pages/AnalyticsPage.tsx`** — Report modal: **template (T1/T2/T3), date range, case_type, status, branch, "רק ללא סניף", format (PDF/DOCX)**. No logo or color inputs. Request body has no `brand`.
+- **`frontend/src/lib/types.ts`** — `CaseTypeFeeAverageRow`; `AnalyticsV2Response.case_type_fee_averages`.
 
 ---
 
@@ -31,20 +31,12 @@ Content-Type: application/json
     "status": null,
     "branch_name": null,
     "branch_is_null": false
-  },
-  "brand": {
-    "logo_base64": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
-    "primary_hex": "#1F4E79",
-    "accent_hex": "#2E75B6",
-    "header_bg_hex": null,
-    "header_text_hex": "#FFFFFF"
   }
 }
 ```
 
-- **logo_base64:** Preferred over any URL. Data URL (`data:image/...;base64,...`) or raw base64. Backend does **not** fetch external URLs (SSRF-safe).
-- **primary_hex / accent_hex / header_bg_hex / header_text_hex:** Optional; defaults: primary `#1F4E79`, accent `#2E75B6`, header text `#FFFFFF`; `header_bg_hex` defaults to primary when null.
-- With "ללא סניף" only: `"branch_name": null, "branch_is_null": true`.
+- **brand** is optional. If omitted, report uses fixed **Light Navy + Gold** palette. If provided: `primary_hex`, `accent_hex` only (no logo).
+- For "ללא סניף" only: `"branch_name": null, "branch_is_null": true`.
 
 ---
 
@@ -56,45 +48,44 @@ Content-Type: application/json
 
 ---
 
-## PDF layout (screenshot-like description)
+## PDF / DOCX layout (premium Navy + Gold)
 
-- **Header:** If `brand.logo_base64` is set, logo appears **top-right** (PDF) or at **top** (DOCX). Title and period below.
-- **Brand colors:** Title and section headings use `primary_hex`. Table header row uses `header_bg_hex` (default primary) and `header_text_hex` (default white). Chart bars use `primary_hex`; axis labels neutral gray; clean layout, light grid.
-- All text and tables are RTL. No case IDs or internal-only fields.
+**Palette (fixed):** primary_navy `#1F3B63`, accent_gold `#C9A227`, header_bg = primary_navy, header_text `#FFFFFF`, subtle_gray `#F3F5F7`, body_text `#111827`.
 
-### T1 — דו״ח סיכום פעילות (first page)
+- **PDF:** Full-width **title bar** at top (header_bg, header_text). **Section headers:** navy text + thin **gold underline**. **Tables:** header row navy background + white text; **zebra** rows with subtle_gray; light gray borders. **Chart:** bars primary_navy, **max bar accent_gold**; axes body_text; minimal grid.
+- **DOCX:** Title in navy with thin gold line below; section headings navy + gold underline; table header row shaded navy with white text; chart image same as PDF.
+- RTL throughout. No case identifiers.
 
-1. **Title bar:** "דו״ח סיכום פעילות" (brand color) + optional logo top-right.
-2. **Subtitle:** "תקופה: … | תיקים בפילטר: N".
-3. **מפתחות ביצוע:** שכ״ט ממוצע לפי שלבים, ריטיינר, הוצאות ממוצעות, שלב סיום ממוצע (when applicable).
-4. **סיכום:** Bullet narrative (תיקים, ממוצעים, שלב שכיח, סניף נפח גבוה).
-5. **Chart:** "התפלגות שלב סיום (תיקים סגורים)" — horizontal bar chart.
-6. **Table:** "נפח לפי סניף וסוג תיק" (סניף, סוג תיק, כמות).
-7. **Table:** "שכ״ט ממוצע לפי סניף" (סניף, תיקים, שכ״ט שלבים, ריטיינר, הוצאות).
+### T1 — דו״ח סיכום פעילות (balanced)
 
-### T2 — דו״ח סניפים (first page)
+1. **Title bar:** Full width, navy bg, white text: title + period.
+2. **מפתחות ביצוע** (navy + gold underline): KPIs (3–4).
+3. **סיכום:** Narrative bullets (3–5).
+4. **התפלגות שלב סיום** + chart.
+5. **נפח לפי סניף וסוג תיק** table.
+6. **שכ״ט ממוצע לפי סניף** table.
 
-1. Title + period (same as above).
-2. **מפתחות ביצוע** (same KPI row).
-3. **שכ״ט ממוצע לפי סניף** — **large table first** (all branches).
-4. **נפח תיקים לפי סניף וסוג תיק** — full volume table.
-5. **תובנות:** Top branch by volume; top branch by avg stage fee (mini insights).
-6. **התפלגות שלב סיום** — smaller chart (optional).
+### T2 — דו״ח סניפים (branch-focused)
 
-### T3 — דו״ח סוגי תיקים (first page)
+1. Title bar + **מפתחות ביצוע** (same).
+2. **שכ״ט ממוצע לפי סניף** — **BIG table first** (all branches).
+3. **נפח תיקים לפי סניף וסוג תיק** table.
+4. **תובנות:** Top-3: branch with highest volume; branch with highest avg stage fee; branch with highest avg retainer fee.
+5. **התפלגות שלב סיום** — **only if CLOSED cases exist**; otherwise omitted.
 
-1. Title + period.
-2. **מפתחות ביצוע** (same).
-3. **סיכום לפי סוג תיק** — table: סוג תיק, תיקים, שכ״ט שלבים, שכ״ט ריטיינר, הוצאות (from `case_type_fee_averages`).
-4. **סיכום:** Narrative bullets.
-5. **התפלגות שלב סיום** — **only when** filter/data include CLOSED cases (i.e. when `distributions.closing_stage` is non-empty).
+### T3 — דו״ח סוגי תיקים (case-type focused)
+
+1. Title bar + **מפתחות ביצוע** (same).
+2. **סיכום לפי סוג תיק** — table: case_type, cases_count, avg_stage_fee_ils, avg_retainer_fee_ils, avg_expenses_ils.
+3. **התפלגות שלב סיום** — only when CLOSED cases present.
+4. **סיכום סניפים** — optional small table (branch, count).
 
 ---
 
-## Brand colors + logo
+## Brand
 
-- **Logo:** Use `brand.logo_base64` only (data URL or raw base64). Backend **does not** fetch external URLs (SSRF-safe).
-- **Colors:** `primary_hex`, `accent_hex`, `header_bg_hex`, `header_text_hex` applied to PDF/DOCX title, section headers, table header row, and chart bar color.
+- **No logo** in UI or request. Backend ignores logo fields.
+- **Colors:** Fixed Light Navy + Gold palette. Optional request `brand` can override `primary_hex` / `accent_hex` only.
 
 ---
 
