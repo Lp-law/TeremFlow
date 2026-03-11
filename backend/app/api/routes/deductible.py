@@ -24,7 +24,8 @@ def deductible_summary(
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
     summary = get_unified_summary(db, case)
-    overrides = getattr(case, "manual_overrides_json", None) or {}
+    raw = getattr(case, "manual_overrides_json", None)
+    overrides = raw if isinstance(raw, dict) else {}
     return DeductibleSummaryOut(
         excess_total_ils=summary["excess_total_ils"],
         retainer_charged_to_date_ils=summary["retainer_charged_to_date_ils"],

@@ -39,7 +39,7 @@ def _parse_override_to_decimal(raw: Any) -> Decimal | None:
             return q_ils(raw)
         if isinstance(raw, str):
             s = raw.strip()
-            if not s:
+            if not s or s.lower() in ("none", "null", ""):
                 return None
             return q_ils(Decimal(s))
         if isinstance(raw, (int, float)):
@@ -49,33 +49,46 @@ def _parse_override_to_decimal(raw: Any) -> Decimal | None:
         return None
 
 
+def _safe_overrides(case: Case) -> dict[str, Any]:
+    """Return manual_overrides_json as a dict; never return non-dict (legacy/DB can store list or string)."""
+    raw = getattr(case, "manual_overrides_json", None)
+    if raw is None:
+        return {}
+    if isinstance(raw, dict):
+        return raw
+    return {}
+
+
 def get_effective_end_date(case: Case) -> dt.date:
-    """When frozen, retainer charged months stop at retainer_frozen_at; else today."""
-    if getattr(case, "retainer_is_frozen", False) and getattr(case, "retainer_frozen_at", None):
-        return case.retainer_frozen_at
+    """When frozen, retainer charged months stop at retainer_frozen_at; else today. Always returns date."""
+    if getattr(case, "retainer_is_frozen", False):
+        at = getattr(case, "retainer_frozen_at", None)
+        if at is not None and isinstance(at, dt.date):
+            return at
     return dt.date.today()
 
 
 def _effective_anchor_date(case: Case) -> dt.date | None:
     """Retainer anchor date; if missing, derive from open_date. None only if both missing."""
     anchor = getattr(case, "retainer_anchor_date", None)
-    if anchor is not None:
+    if anchor is not None and isinstance(anchor, dt.date):
         return anchor
     open_date = getattr(case, "open_date", None)
-    if open_date is not None:
+    if open_date is not None and isinstance(open_date, dt.date):
         return get_retainer_anchor_date(open_date)
     return None
 
 
 def charged_months_count(case: Case) -> int:
     """Number of months charged from anchor (or month after snapshot_through) to effective_end_date inclusive.
-    Uses count_charged_months(); see that function for the exact month-boundary rule.
-    Returns 0 if anchor/open_date missing.
+    Returns 0 if anchor/open_date missing or snapshot_through is wrong type.
     """
     anchor = _effective_anchor_date(case)
     if anchor is None:
         return 0
     snapshot_through = getattr(case, "retainer_snapshot_through_month", None)
+    if snapshot_through is not None and not isinstance(snapshot_through, dt.date):
+        snapshot_through = None
     effective_end = get_effective_end_date(case)
     return count_charged_months(anchor, effective_end, snapshot_through)
 
@@ -84,7 +97,7 @@ def retainer_charged_to_date_ils(db: Session, case: Case) -> Decimal:
     """Theoretical retainer charged = sum of monthly_gross_ils for each month from start to effective_end.
     Returns 0 if anchor/open_date missing.
     """
-    overrides = getattr(case, "manual_overrides_json", None) or {}
+    overrides = _safe_overrides(case)
     parsed = _parse_override_to_decimal(overrides.get("retainer_charged_override"))
     if parsed is not None:
         return parsed
@@ -92,6 +105,8 @@ def retainer_charged_to_date_ils(db: Session, case: Case) -> Decimal:
     if anchor is None:
         return q_ils(Decimal("0.00"))
     snapshot_through = getattr(case, "retainer_snapshot_through_month", None)
+    if snapshot_through is not None and not isinstance(snapshot_through, dt.date):
+        snapshot_through = None
     start = _accrual_start_month(anchor, snapshot_through)
     end = _month_start(get_effective_end_date(case))
     if start > end:
@@ -106,7 +121,7 @@ def retainer_charged_to_date_ils(db: Session, case: Case) -> Decimal:
 
 def fees_by_stages_ils(db: Session, case: Case) -> Decimal:
     """Sum of non-deleted fee events (computed_amount_ils_gross)."""
-    overrides = getattr(case, "manual_overrides_json", None) or {}
+    overrides = _safe_overrides(case)
     parsed = _parse_override_to_decimal(overrides.get("fees_by_stages_override"))
     if parsed is not None:
         return parsed
@@ -115,34 +130,46 @@ def fees_by_stages_ils(db: Session, case: Case) -> Decimal:
         .filter(FeeEvent.case_id == case.id, FeeEvent.deleted_at.is_(None))
         .all()
     )
-    total = sum(Decimal(str(r[0])) for r in rows)
+    total = sum(
+        Decimal("0.00") if r[0] is None else Decimal(str(r[0]))
+        for r in rows
+    )
     return q_ils(total)
 
 
 def expenses_total_ils(case: Case) -> Decimal:
-    """Case-level editable total (expenses_total_ils_gross)."""
-    overrides = getattr(case, "manual_overrides_json", None) or {}
+    """Case-level editable total (expenses_total_ils_gross). Missing -> 0."""
+    overrides = _safe_overrides(case)
     parsed = _parse_override_to_decimal(overrides.get("expenses_total_override"))
     if parsed is not None:
         return parsed
     val = getattr(case, "expenses_total_ils_gross", None)
     if val is None:
         return q_ils(Decimal("0.00"))
-    return q_ils(Decimal(str(val)))
+    try:
+        return q_ils(Decimal(str(val)))
+    except (InvalidOperation, ValueError, TypeError):
+        return q_ils(Decimal("0.00"))
 
 
 def excess_total_ils(case: Case) -> Decimal:
-    """excess_total = deductible_ils_gross (with override)."""
-    overrides = getattr(case, "manual_overrides_json", None) or {}
+    """excess_total = deductible_ils_gross (with override). Missing -> 0."""
+    overrides = _safe_overrides(case)
     parsed = _parse_override_to_decimal(overrides.get("excess_total_ils_override"))
     if parsed is not None:
         return parsed
-    return q_ils(Decimal(str(case.deductible_ils_gross or 0)))
+    val = getattr(case, "deductible_ils_gross", None)
+    if val is None:
+        return q_ils(Decimal("0.00"))
+    try:
+        return q_ils(Decimal(str(val)))
+    except (InvalidOperation, ValueError, TypeError):
+        return q_ils(Decimal("0.00"))
 
 
 def excess_remaining_ils(db: Session, case: Case) -> Decimal:
     """excess_remaining = excess_total - retainer_charged - expenses_total (with override)."""
-    overrides = getattr(case, "manual_overrides_json", None) or {}
+    overrides = _safe_overrides(case)
     parsed = _parse_override_to_decimal(overrides.get("excess_remaining_override"))
     if parsed is not None:
         return parsed
@@ -155,7 +182,7 @@ def excess_remaining_ils(db: Session, case: Case) -> Decimal:
 
 def fee_diff_ils(db: Session, case: Case) -> Decimal:
     """fee_diff = fees_by_stages - retainer_charged (with override). May be negative."""
-    overrides = getattr(case, "manual_overrides_json", None) or {}
+    overrides = _safe_overrides(case)
     parsed = _parse_override_to_decimal(overrides.get("fee_diff_override"))
     if parsed is not None:
         return parsed

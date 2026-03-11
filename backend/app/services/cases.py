@@ -397,7 +397,8 @@ def get_latest_fee_stage_by_case_ids(db: Session, case_ids: list[int]) -> dict[i
     for case_id, event_type, breakdown_json in rows:
         if case_id not in result:
             if event_type == FeeEventType.STAGE_BILLING:
-                new_codes = (breakdown_json or {}).get("new_codes") if breakdown_json else None
+                bj = breakdown_json if isinstance(breakdown_json, dict) else None
+                new_codes = (bj or {}).get("new_codes") if bj else None
                 if isinstance(new_codes, list) and len(new_codes) > 0:
                     last_code = new_codes[-1]
                     if not isinstance(last_code, str):
@@ -414,9 +415,13 @@ def get_latest_fee_stage_by_case_ids(db: Session, case_ids: list[int]) -> dict[i
 
 
 def _effective_procedure_stage(case: Case, computed_stage: str | None) -> str | None:
-    """Override takes precedence; else computed from fee events."""
-    if case.procedure_stage_override and str(case.procedure_stage_override).strip():
-        return str(case.procedure_stage_override).strip()
+    """Override takes precedence; else computed from fee events. Never raises."""
+    try:
+        ov = getattr(case, "procedure_stage_override", None)
+        if ov is not None and str(ov).strip():
+            return str(ov).strip()
+    except Exception:
+        pass
     return computed_stage
 
 
@@ -488,25 +493,53 @@ def build_case_overview_summary(db: Session, case_id: int) -> dict | None:
         .first()
     )
 
+    # Safe field access for legacy/incomplete data
+    status_val = getattr(case, "status", None)
+    status_str = status_val.value if status_val is not None else "OPEN"
+    ref = getattr(case, "case_reference", None)
+    case_ref = (str(ref).strip() or "") if ref is not None else ""
+    frozen_at = getattr(case, "retainer_frozen_at", None)
+    frozen_at_str = None
+    if frozen_at is not None and hasattr(frozen_at, "isoformat"):
+        try:
+            frozen_at_str = frozen_at.isoformat()
+        except Exception:
+            pass
+    last_fee_date = None
+    last_fee_amount = None
+    if last_fee:
+        ed = getattr(last_fee, "event_date", None)
+        if ed is not None and hasattr(ed, "isoformat"):
+            try:
+                last_fee_date = ed.isoformat()
+            except Exception:
+                pass
+        amt = getattr(last_fee, "computed_amount_ils_gross", None)
+        if amt is not None:
+            try:
+                last_fee_amount = q_ils(Decimal(str(amt)))
+            except Exception:
+                pass
+
     return {
-        "case_reference": case.case_reference,
-        "case_name": case.case_name,
-        "branch_name": case.branch_name,
-        "status": case.status.value,
+        "case_reference": case_ref,
+        "case_name": getattr(case, "case_name", None),
+        "branch_name": getattr(case, "branch_name", None),
+        "status": status_str,
         "current_procedure_stage": current_stage,
         "fees": {
             "fees_by_stages_ils": u["fees_by_stages_ils"],
             "retainer_charged_to_date_ils": u["retainer_charged_to_date_ils"],
             "fee_diff_ils": u["fee_diff_ils"],
-            "last_fee_event_date": last_fee.event_date.isoformat() if last_fee else None,
-            "last_fee_event_amount": q_ils(Decimal(str(last_fee.computed_amount_ils_gross))) if last_fee else None,
+            "last_fee_event_date": last_fee_date,
+            "last_fee_event_amount": last_fee_amount,
         },
         "retainer": {
             "retainer_charged_to_date_ils": u["retainer_charged_to_date_ils"],
             "charged_months_count": u["charged_months_count"],
             "monthly_gross_ils": monthly,
             "retainer_is_frozen": getattr(case, "retainer_is_frozen", False),
-            "retainer_frozen_at": case.retainer_frozen_at.isoformat() if getattr(case, "retainer_frozen_at", None) else None,
+            "retainer_frozen_at": frozen_at_str,
         },
         "expenses": {
             "total_expenses_ils": u["expenses_total_ils"],
@@ -569,10 +602,20 @@ def get_case_warnings(db: Session, case_id: int) -> list[dict[str, Any]]:
         })
 
     # 2) Deductible/excess
+    def _safe_positive(val: Any) -> bool:
+        if val is None:
+            return False
+        if isinstance(val, Decimal):
+            return val > 0
+        try:
+            return float(val) > 0
+        except (TypeError, ValueError):
+            return False
+
     d_ils = getattr(case, "deductible_ils_gross", None)
     d_usd = getattr(case, "deductible_usd", None)
-    d_ils_ok = d_ils is not None and (isinstance(d_ils, Decimal) and d_ils > 0 or (not isinstance(d_ils, Decimal) and float(d_ils or 0) > 0))
-    d_usd_ok = d_usd is not None and (isinstance(d_usd, Decimal) and d_usd > 0 or (not isinstance(d_usd, Decimal) and float(d_usd or 0) > 0))
+    d_ils_ok = _safe_positive(d_ils)
+    d_usd_ok = _safe_positive(d_usd)
     if not d_ils_ok and not d_usd_ok:
         warnings.append({
             "code": "MISSING_DEDUCTIBLE",
@@ -582,8 +625,11 @@ def get_case_warnings(db: Session, case_id: int) -> list[dict[str, Any]]:
             "action_tab": "deductible",
         })
     else:
-        u = get_unified_summary(db, case)
-        total_ils = u.get("excess_total_ils") or Decimal("0")
+        try:
+            u = get_unified_summary(db, case)
+            total_ils = u.get("excess_total_ils") or Decimal("0")
+        except Exception:
+            total_ils = Decimal("0")
         if total_ils == 0:
             warnings.append({
                 "code": "DEDUCTIBLE_ZERO",
@@ -604,7 +650,10 @@ def get_case_warnings(db: Session, case_id: int) -> list[dict[str, Any]]:
         })
     snap_paid = getattr(case, "retainer_snapshot_ils_gross", None)
     snap_through = getattr(case, "retainer_snapshot_through_month", None)
-    snap_paid_set = snap_paid is not None and (float(snap_paid or 0) != 0)
+    try:
+        snap_paid_set = snap_paid is not None and (float(snap_paid or 0) != 0)
+    except (TypeError, ValueError):
+        snap_paid_set = False
     if snap_through is not None and not snap_paid_set:
         warnings.append({
             "code": "RETAINER_SNAPSHOT_MISMATCH",
@@ -623,7 +672,8 @@ def get_case_warnings(db: Session, case_id: int) -> list[dict[str, Any]]:
         })
 
     # 4) Raw import fields not mapped (heuristic, info only)
-    raw = getattr(case, "raw_import_fields_json", None) or {}
+    raw_raw = getattr(case, "raw_import_fields_json", None)
+    raw = raw_raw if isinstance(raw_raw, dict) else {}
     if _raw_has_group(raw, _RAW_RETAINER_KEY_SUBSTRINGS):
         if not snap_paid_set and getattr(case, "retainer_snapshot_through_month", None) is None:
             warnings.append({
@@ -642,7 +692,10 @@ def get_case_warnings(db: Session, case_id: int) -> list[dict[str, Any]]:
             "action_tab": "deductible",
         })
     exp_snap = getattr(case, "expenses_snapshot_ils_gross", None)
-    exp_snap_set = exp_snap is not None and (float(exp_snap or 0) != 0)
+    try:
+        exp_snap_set = exp_snap is not None and (float(exp_snap or 0) != 0)
+    except (TypeError, ValueError):
+        exp_snap_set = False
     if _raw_has_group(raw, _RAW_EXPENSES_KEY_SUBSTRINGS) and not exp_snap_set:
         warnings.append({
             "code": "RAW_EXPENSES_NOT_MAPPED",
