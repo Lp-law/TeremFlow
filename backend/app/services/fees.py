@@ -15,26 +15,28 @@ from app.models.retainer import RetainerPayment
 from app.services.deductible import q_ils
 
 
+# All fee amounts are gross (including VAT, כולל מע"מ). 18% VAT applied to net base.
 def compute_fee_amount(event_type: FeeEventType, *, quantity: int = 1, amount_override_ils_gross: Decimal | None = None) -> Decimal:
     if amount_override_ils_gross is not None:
         return q_ils(amount_override_ils_gross)
     if quantity < 1:
         raise ValueError("quantity must be >= 1")
 
+    # Gross (כולל מע"מ) defaults; used when no FeeStageRate or single fee event.
     mapping: dict[FeeEventType, Decimal] = {
-        FeeEventType.COURT_STAGE_1_DEFENSE: Decimal("20000.00"),
-        FeeEventType.COURT_STAGE_2_DAMAGES: Decimal("15000.00"),
-        FeeEventType.COURT_STAGE_3_EVIDENCE: Decimal("15000.00"),
-        FeeEventType.COURT_STAGE_4_PROOFS: Decimal("15000.00"),
-        FeeEventType.COURT_STAGE_5_SUMMARIES: Decimal("10000.00"),
-        FeeEventType.AMENDED_DEFENSE_PARTIAL: Decimal("10000.00"),
-        FeeEventType.AMENDED_DEFENSE_FULL: Decimal("20000.00"),
-        FeeEventType.THIRD_PARTY_NOTICE: Decimal("10000.00"),
-        FeeEventType.ADDITIONAL_PROOF_HEARING: Decimal("1500.00"),
-        FeeEventType.DEMAND_FIX: Decimal("5000.00"),
-        FeeEventType.DEMAND_HOURLY: Decimal("700.00"),
+        FeeEventType.COURT_STAGE_1_DEFENSE: Decimal("23600.00"),   # 20000 + 18%
+        FeeEventType.COURT_STAGE_2_DAMAGES: Decimal("17700.00"),
+        FeeEventType.COURT_STAGE_3_EVIDENCE: Decimal("17700.00"),
+        FeeEventType.COURT_STAGE_4_PROOFS: Decimal("17700.00"),
+        FeeEventType.COURT_STAGE_5_SUMMARIES: Decimal("11800.00"),
+        FeeEventType.AMENDED_DEFENSE_PARTIAL: Decimal("11800.00"),
+        FeeEventType.AMENDED_DEFENSE_FULL: Decimal("23600.00"),
+        FeeEventType.THIRD_PARTY_NOTICE: Decimal("11800.00"),
+        FeeEventType.ADDITIONAL_PROOF_HEARING: Decimal("1770.00"),
+        FeeEventType.DEMAND_FIX: Decimal("5900.00"),
+        FeeEventType.DEMAND_HOURLY: Decimal("826.00"),
         FeeEventType.SMALL_CLAIMS_MANUAL: Decimal("0.00"),  # must override
-        FeeEventType.APPEAL: Decimal("15000.00"),
+        FeeEventType.APPEAL: Decimal("17700.00"),
         # STAGE_BILLING: amount comes from breakdown; do not use compute_fee_amount
     }
     if event_type == FeeEventType.STAGE_BILLING:

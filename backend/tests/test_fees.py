@@ -7,15 +7,17 @@ from app.services.fees import apply_credit_to_amounts, compute_fee_amount
 
 
 def test_compute_fee_amount_court_stage():
-    assert compute_fee_amount(FeeEventType.COURT_STAGE_1_DEFENSE) == Decimal("20000.00")
+    # Gross (כולל מע"מ)
+    assert compute_fee_amount(FeeEventType.COURT_STAGE_1_DEFENSE) == Decimal("23600.00")
 
 
 def test_compute_fee_amount_hourly_quantity():
-    assert compute_fee_amount(FeeEventType.DEMAND_HOURLY, quantity=3) == Decimal("2100.00")
+    # Gross: 826 * 3
+    assert compute_fee_amount(FeeEventType.DEMAND_HOURLY, quantity=3) == Decimal("2478.00")
 
 
 def test_compute_fee_amount_appeal():
-    assert compute_fee_amount(FeeEventType.APPEAL) == Decimal("15000.00")
+    assert compute_fee_amount(FeeEventType.APPEAL) == Decimal("17700.00")
 
 
 def test_compute_fee_amount_stage_billing_raises():
