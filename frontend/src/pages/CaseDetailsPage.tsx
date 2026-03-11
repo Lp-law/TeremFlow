@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
+import { useAuth } from '../auth/AuthContext'
 import { BackButton } from '../components/BackButton'
 import { apiDownload, apiFetch } from '../lib/api'
 import { Badge } from '../components/Badge'
@@ -78,8 +79,10 @@ function formatProcedureStage(stage: string | null | undefined): string {
 }
 
 export function CaseDetailsPage() {
+  const { user } = useAuth()
   const { caseId } = useParams()
   const id = Number(caseId)
+  const isAdmin = user?.role === 'ADMIN'
 
   const [tab, setTab] = useState<'overview' | 'expenses' | 'deductible' | 'retainer' | 'fees'>('overview')
   const [expensesInitialPayerFilter, setExpensesInitialPayerFilter] = useState<ExpensePayer | ''>('')
@@ -255,6 +258,7 @@ export function CaseDetailsPage() {
                   onSummaryFailed={() => setSummaryEndpointsFailed(true)}
                   onCaseUpdated={load}
                   onToast={(msg) => { setToast(msg); setTimeout(() => setToast(null), 3000) }}
+                  showRawImport={isAdmin}
                 />
               ) : null}
 
@@ -555,6 +559,7 @@ function OverviewTab({
   onSummaryFailed,
   onCaseUpdated,
   onToast,
+  showRawImport = false,
 }: {
   caseId: number
   caseItem: CaseOut
@@ -564,6 +569,7 @@ function OverviewTab({
   onSummaryFailed?: () => void
   onCaseUpdated?: () => void | Promise<void>
   onToast?: (msg: string) => void
+  showRawImport?: boolean
 }) {
   const [overview, setOverview] = useState<CaseOverviewSummary | null>(null)
   const [overviewLoading, setOverviewLoading] = useState(true)
@@ -759,7 +765,7 @@ function OverviewTab({
         </dl>
       </section>
 
-      {caseItem.raw_import_fields_json && Object.keys(caseItem.raw_import_fields_json).length > 0 ? (
+      {showRawImport && caseItem.raw_import_fields_json && Object.keys(caseItem.raw_import_fields_json).length > 0 ? (
         <RawImportSection raw={caseItem.raw_import_fields_json} />
       ) : null}
     </div>

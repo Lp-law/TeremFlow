@@ -231,7 +231,9 @@ export function DashboardPage() {
         <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4">
           <CardLink to="/cases" title="תיקים" subtitle="ניהול תיקים, הוצאות, יתרת השתתפות עצמית" />
           <CardLink to="/analytics" title="אנליטיקה" subtitle="סיכומים, פילוחים והשוואות זמן" />
-          <CardLink to="/import" title="ייבוא" subtitle="ייבוא מאקסל (MVP)" />
+          {user?.role === 'ADMIN' ? (
+            <CardLink to="/import" title="ייבוא" subtitle="ייבוא מאקסל (MVP)" />
+          ) : null}
         </div>
 
         <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">

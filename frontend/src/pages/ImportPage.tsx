@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { BackButton } from '../components/BackButton'
+import { useAuth } from '../auth/AuthContext'
 import { API_BASE_URL, getCsrfHeadersForMutation } from '../lib/api'
 
 type ImportMode = 'create' | 'update'
@@ -20,6 +21,9 @@ type PreviewResponse = {
 }
 
 export function ImportPage() {
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'ADMIN'
+
   const [step, setStep] = useState<1 | 2 | 3>(1)
   const [mode, setMode] = useState<ImportMode>('create')
   const [overwriteBlanks, setOverwriteBlanks] = useState(false)
@@ -36,9 +40,9 @@ export function ImportPage() {
   const [expandedRowIndex, setExpandedRowIndex] = useState<number | null>(null)
 
   useEffect(() => {
-    checkDbStatus()
+    if (isAdmin) checkDbStatus()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [isAdmin])
 
   useEffect(() => {
     if (step === 2 && file) {
@@ -148,6 +152,24 @@ export function ImportPage() {
     setPreview(null)
     setResult(null)
     setError(null)
+  }
+
+  if (!isAdmin) {
+    return (
+      <div className="min-h-screen w-full px-6 py-10">
+        <div className="mx-auto w-full max-w-4xl">
+          <div className="flex items-center justify-between gap-4">
+            <div className="text-right">
+              <div className="text-2xl font-bold text-muted">אין הרשאה למסך ייבוא.</div>
+            </div>
+            <BackButton />
+          </div>
+          <div className="mt-6 card p-6 text-right text-muted">
+            גישה למסך זה שמורה למנהלי מערכת.
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (

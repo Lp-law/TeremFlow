@@ -20,7 +20,7 @@ router = APIRouter()
 @router.post("/wipe-case-data")
 def wipe_case_data(
     db: Session = Depends(get_db),
-    user=Depends(require_auth),
+    user=Depends(require_admin),
     x_wipe_token: str | None = Header(default=None),
 ):
     """
@@ -53,7 +53,7 @@ def wipe_case_data(
 
 
 @router.get("/wipe-case-data-status")
-def wipe_case_data_status(db: Session = Depends(get_db), _=Depends(require_auth)):
+def wipe_case_data_status(db: Session = Depends(get_db), _=Depends(require_admin)):
     """Returns counts of case-related rows. Use to verify DB is clean (all zeros)."""
     case_count = db.query(Case).count()
     return {

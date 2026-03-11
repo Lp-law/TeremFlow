@@ -5,7 +5,7 @@ import logging
 from fastapi import APIRouter, Depends, File, Query, UploadFile
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_auth
+from app.api.deps import require_admin
 from app.db.session import get_db
 
 from app.services.import_excel import (
@@ -20,7 +20,7 @@ router = APIRouter()
 
 
 @router.post("/excel/preview")
-def import_excel_preview(file: UploadFile = File(...), _=Depends(require_auth)):
+def import_excel_preview(file: UploadFile = File(...), _=Depends(require_admin)):
     """Preview create import: no DB writes. Returns headers, sample rows, warnings."""
     try:
         data = file.file.read()
@@ -35,7 +35,7 @@ def import_excel_update_preview(
     file: UploadFile = File(...),
     overwrite_blanks: bool = Query(False, description="If true, empty cells clear existing values"),
     db: Session = Depends(get_db),
-    _=Depends(require_auth),
+    _=Depends(require_admin),
 ):
     """Preview update import: read-only. Returns headers, sample rows, case_found and will_update_fields per row, warnings."""
     try:
@@ -48,7 +48,7 @@ def import_excel_update_preview(
 
 @router.post("/excel")
 def import_excel(
-    file: UploadFile = File(...), db: Session = Depends(get_db), user=Depends(require_auth)
+    file: UploadFile = File(...), db: Session = Depends(get_db), user=Depends(require_admin)
 ):
     try:
         data = file.file.read()
@@ -66,7 +66,7 @@ def import_excel_update(
     file: UploadFile = File(...),
     overwrite_blanks: bool = Query(False, description="If true, empty cells clear existing values"),
     db: Session = Depends(get_db),
-    user=Depends(require_auth),
+    user=Depends(require_admin),
 ):
     try:
         data = file.file.read()
