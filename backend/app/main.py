@@ -5,6 +5,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import HTTPException, Request
+from fastapi.responses import JSONResponse
 
 from app.api.router import api_router
 from app.core.config import settings
@@ -31,6 +32,37 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
         expose_headers=["X-Backup-Id", "X-Backup-Sha256", "Content-Disposition"],
     )
+
+    def _cors_headers_for_request(request: Request) -> dict[str, str]:
+        """Echo CORS headers so error responses (e.g. 500) are not blocked by the browser."""
+        origin = request.headers.get("origin", "").strip()
+        if origin and origin in origins:
+            allow_origin = origin
+        else:
+            allow_origin = origins[0] if origins else "*"
+        return {
+            "Access-Control-Allow-Origin": allow_origin,
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Allow-Methods": "*",
+            "Access-Control-Allow-Headers": "*",
+        }
+
+    @app.exception_handler(Exception)
+    async def _global_exception_handler(request: Request, exc: Exception):
+        """Return 500 with CORS headers so the frontend sees the error instead of 'blocked by CORS'."""
+        if isinstance(exc, HTTPException):
+            # Let FastAPI handle 4xx with its default handler (which may not add CORS on error path)
+            return JSONResponse(
+                status_code=exc.status_code,
+                content={"detail": exc.detail},
+                headers=_cors_headers_for_request(request),
+            )
+        logger.exception("Unhandled exception: %s", exc)
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Internal server error"},
+            headers=_cors_headers_for_request(request),
+        )
 
     @app.get("/health")
     def health():

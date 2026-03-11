@@ -25,6 +25,7 @@ from app.services.retainer import (
     _month_start,
     add_months,
     count_charged_months,
+    get_retainer_anchor_date,
     retainer_gross_for_month,
 )
 
@@ -55,23 +56,41 @@ def get_effective_end_date(case: Case) -> dt.date:
     return dt.date.today()
 
 
+def _effective_anchor_date(case: Case) -> dt.date | None:
+    """Retainer anchor date; if missing, derive from open_date. None only if both missing."""
+    anchor = getattr(case, "retainer_anchor_date", None)
+    if anchor is not None:
+        return anchor
+    open_date = getattr(case, "open_date", None)
+    if open_date is not None:
+        return get_retainer_anchor_date(open_date)
+    return None
+
+
 def charged_months_count(case: Case) -> int:
     """Number of months charged from anchor (or month after snapshot_through) to effective_end_date inclusive.
     Uses count_charged_months(); see that function for the exact month-boundary rule.
+    Returns 0 if anchor/open_date missing.
     """
-    anchor = case.retainer_anchor_date
+    anchor = _effective_anchor_date(case)
+    if anchor is None:
+        return 0
     snapshot_through = getattr(case, "retainer_snapshot_through_month", None)
     effective_end = get_effective_end_date(case)
     return count_charged_months(anchor, effective_end, snapshot_through)
 
 
 def retainer_charged_to_date_ils(db: Session, case: Case) -> Decimal:
-    """Theoretical retainer charged = sum of monthly_gross_ils for each month from start to effective_end."""
+    """Theoretical retainer charged = sum of monthly_gross_ils for each month from start to effective_end.
+    Returns 0 if anchor/open_date missing.
+    """
     overrides = getattr(case, "manual_overrides_json", None) or {}
     parsed = _parse_override_to_decimal(overrides.get("retainer_charged_override"))
     if parsed is not None:
         return parsed
-    anchor = case.retainer_anchor_date
+    anchor = _effective_anchor_date(case)
+    if anchor is None:
+        return q_ils(Decimal("0.00"))
     snapshot_through = getattr(case, "retainer_snapshot_through_month", None)
     start = _accrual_start_month(anchor, snapshot_through)
     end = _month_start(get_effective_end_date(case))
