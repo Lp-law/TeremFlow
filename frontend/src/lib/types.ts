@@ -54,6 +54,8 @@ export type CaseOut = {
   retainer_frozen_at?: string | null
   insurer_started: boolean
   insurer_start_date: string | null
+  /** Manual overrides for deductible/overview (from GET /cases/{id}). */
+  manual_overrides_json?: Record<string, unknown> | null
 }
 
 export type ExpenseOut = {
