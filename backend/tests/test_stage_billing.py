@@ -13,6 +13,7 @@ from app.services.fees import (
     get_billed_codes_for_case,
     get_fee_stage_rates,
 )
+from app.services.unified import get_unified_summary
 
 
 def _seed_rates(db):
@@ -52,9 +53,35 @@ def test_get_fee_stage_rates(db, case_with_rates):
     assert "APPEAL" in codes
 
 
+def test_fee_stage_rate_stage1_is_gross(db, case_with_rates):
+    """Stage 1 must be 23,600 ILS gross (incl. VAT), not 20,000 net."""
+    rates = get_fee_stage_rates(db)
+    stage1 = next((r for r in rates if r.code == "COURT_STAGE_1_DEFENSE"), None)
+    assert stage1 is not None
+    assert stage1.amount_ils == Decimal("23600.00")
+
+
 def test_get_billed_codes_empty(db, case_with_rates):
     codes = get_billed_codes_for_case(db, case_with_rates.id)
     assert codes == []
+
+
+def test_stage_billing_single_stage1_charges_23600(db, case_with_rates):
+    """Creating STAGE_BILLING with only COURT_STAGE_1_DEFENSE must charge 23,600 (gross) everywhere."""
+    class Payload:
+        event_date = date(2024, 6, 1)
+        codes = ["COURT_STAGE_1_DEFENSE"]
+        adjustment = None
+
+    e = create_stage_billing_event(db, case_id=case_with_rates.id, payload=Payload(), user_id=1)
+    assert e.computed_amount_ils_gross == Decimal("23600.00")
+    assert e.breakdown_json["base_total_selected"] == "23600.00"
+    assert e.breakdown_json["delta_total"] == "23600.00"
+    assert e.breakdown_json["final_delta_total"] == "23600.00"
+
+    # Unified summary must use gross for fees_by_stages_ils
+    summary = get_unified_summary(db, case_with_rates)
+    assert summary["fees_by_stages_ils"] == Decimal("23600.00")
 
 
 def test_create_stage_billing_event_no_adjustment(db, case_with_rates):
@@ -138,7 +165,7 @@ def test_discount_exceeds_new_charges_returns_400(db, case_with_rates):
     """When discount > delta_total, return 400 'Discount exceeds new charges'."""
     class Adj:
         kind = "DISCOUNT"
-        amount_ils = Decimal("25000.00")  # > COURT_STAGE_1_DEFENSE rate 20000
+        amount_ils = Decimal("25000.00")  # > COURT_STAGE_1_DEFENSE rate 23600
         reason = ""
 
     class Payload:

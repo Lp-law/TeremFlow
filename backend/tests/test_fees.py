@@ -1,14 +1,41 @@
+from datetime import date
 from decimal import Decimal
 
 import pytest
 
-from app.models.enums import FeeEventType
-from app.services.fees import apply_credit_to_amounts, compute_fee_amount
+from app.models.case import Case
+from app.models.enums import CaseStatus, CaseType, FeeEventType
+from app.services.fees import add_fee_event, apply_credit_to_amounts, compute_fee_amount
 
 
 def test_compute_fee_amount_court_stage():
-    # Gross (כולל מע"מ)
+    # Gross (כולל מע"מ): Stage 1 is 23,600 not 20,000
     assert compute_fee_amount(FeeEventType.COURT_STAGE_1_DEFENSE) == Decimal("23600.00")
+
+
+def test_add_fee_event_stage1_stores_gross(db):
+    """Single fee event for COURT_STAGE_1_DEFENSE must store 23,600 (gross), not 20,000."""
+    c = Case(
+        case_reference="F-1",
+        case_name="Fee test",
+        case_type=CaseType.COURT,
+        status=CaseStatus.OPEN,
+        open_date=date(2024, 1, 1),
+        retainer_anchor_date=date(2024, 7, 1),
+        deductible_ils_gross=Decimal("5000.00"),
+    )
+    db.add(c)
+    db.commit()
+    db.refresh(c)
+
+    class Payload:
+        event_type = FeeEventType.COURT_STAGE_1_DEFENSE
+        event_date = date(2024, 6, 1)
+        quantity = 1
+        amount_override_ils_gross = None
+
+    e = add_fee_event(db, case_id=c.id, payload=Payload())
+    assert e.computed_amount_ils_gross == Decimal("23600.00")
 
 
 def test_compute_fee_amount_hourly_quantity():
