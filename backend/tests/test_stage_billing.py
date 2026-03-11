@@ -16,10 +16,11 @@ from app.services.fees import (
 
 
 def _seed_rates(db):
+    # Gross (כולל מע"מ)
     for code, amount in [
-        ("COURT_STAGE_1_DEFENSE", Decimal("20000.00")),
-        ("COURT_STAGE_2_DAMAGES", Decimal("15000.00")),
-        ("APPEAL", Decimal("15000.00")),
+        ("COURT_STAGE_1_DEFENSE", Decimal("23600.00")),
+        ("COURT_STAGE_2_DAMAGES", Decimal("17700.00")),
+        ("APPEAL", Decimal("17700.00")),
     ]:
         db.add(FeeStageRate(code=code, amount_ils=amount, is_active=True))
     db.commit()
@@ -64,14 +65,14 @@ def test_create_stage_billing_event_no_adjustment(db, case_with_rates):
 
     e = create_stage_billing_event(db, case_id=case_with_rates.id, payload=Payload(), user_id=1)
     assert e.event_type == FeeEventType.STAGE_BILLING
-    assert e.computed_amount_ils_gross == Decimal("35000.00")
+    assert e.computed_amount_ils_gross == Decimal("41300.00")  # 23600 + 17700 gross
     assert e.breakdown_json is not None
     assert e.breakdown_json["codes_selected"] == ["COURT_STAGE_1_DEFENSE", "COURT_STAGE_2_DAMAGES"]
     assert e.breakdown_json["codes_already_billed"] == []
     assert e.breakdown_json["new_codes"] == ["COURT_STAGE_1_DEFENSE", "COURT_STAGE_2_DAMAGES"]
-    assert e.breakdown_json["base_total_selected"] == "35000.00"
-    assert e.breakdown_json["delta_total"] == "35000.00"
-    assert e.breakdown_json["final_delta_total"] == "35000.00"
+    assert e.breakdown_json["base_total_selected"] == "41300.00"
+    assert e.breakdown_json["delta_total"] == "41300.00"
+    assert e.breakdown_json["final_delta_total"] == "41300.00"
     db.refresh(case_with_rates)
     assert case_with_rates.performed_fee_stage_codes == ["COURT_STAGE_1_DEFENSE", "COURT_STAGE_2_DAMAGES"]
 
@@ -100,11 +101,11 @@ def test_create_stage_billing_with_discount(db, case_with_rates):
         adjustment = Adj()
 
     e = create_stage_billing_event(db, case_id=case_with_rates.id, payload=Payload(), user_id=1)
-    assert e.computed_amount_ils_gross == Decimal("15000.00")  # delta 20000 - 5000
-    assert e.breakdown_json["delta_total"] == "20000.00"
+    assert e.computed_amount_ils_gross == Decimal("18600.00")  # delta 23600 - 5000
+    assert e.breakdown_json["delta_total"] == "23600.00"
     assert e.breakdown_json["adjustment"]["kind"] == "DISCOUNT"
     assert e.breakdown_json["adjustment"].get("percent") is None
-    assert e.breakdown_json["final_delta_total"] == "15000.00"
+    assert e.breakdown_json["final_delta_total"] == "18600.00"
 
 
 def test_delta_only_then_discount_ils(db, case_with_rates):
@@ -127,10 +128,10 @@ def test_delta_only_then_discount_ils(db, case_with_rates):
         adjustment = Adj()
 
     e2 = create_stage_billing_event(db, case_id=case_with_rates.id, payload=Payload2(), user_id=1)
-    # rate(APPEAL) = 15000, minus 10 => 14990
-    assert e2.computed_amount_ils_gross == Decimal("14990.00")
-    assert e2.breakdown_json["delta_total"] == "15000.00"
-    assert e2.breakdown_json["final_delta_total"] == "14990.00"
+    # rate(APPEAL) = 17700 gross, minus 10 => 17690
+    assert e2.computed_amount_ils_gross == Decimal("17690.00")
+    assert e2.breakdown_json["delta_total"] == "17700.00"
+    assert e2.breakdown_json["final_delta_total"] == "17690.00"
 
 
 def test_discount_exceeds_new_charges_returns_400(db, case_with_rates):
@@ -209,5 +210,5 @@ def test_cumulative_delta_second_call_add_one_more_code(db, case_with_rates):
     e2 = create_stage_billing_event(db, case_id=case_with_rates.id, payload=Payload2(), user_id=1)
     assert e2.breakdown_json["codes_selected"] == ["APPEAL", "COURT_STAGE_1_DEFENSE", "COURT_STAGE_2_DAMAGES"]
     assert e2.breakdown_json["new_codes"] == ["APPEAL"]
-    assert e2.breakdown_json["delta_total"] == "15000.00"  # APPEAL rate
-    assert e2.computed_amount_ils_gross == Decimal("15000.00")
+    assert e2.breakdown_json["delta_total"] == "17700.00"  # APPEAL rate (gross)
+    assert e2.computed_amount_ils_gross == Decimal("17700.00")

@@ -197,7 +197,7 @@ def create_stage_billing_event(db: Session, *, case_id: int, payload, user_id: i
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unknown or inactive rate for: {missing}")
 
     base_total_selected = q_ils(sum(rates_map[c] for c in codes_selected))
-    delta_total = q_ils(sum(rates_map[c] for c in new_codes))
+    delta_total = q_ils(sum((rates_map[c] for c in new_codes), Decimal("0")))
 
     confirm_zero = getattr(payload, "confirm_zero_new_codes", False)
     if not new_codes and not confirm_zero:

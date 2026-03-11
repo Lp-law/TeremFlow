@@ -36,22 +36,22 @@ def upgrade() -> None:
         sa.Column("effective_to", sa.Date(), nullable=True),
     )
 
-    # Seed: all FeeEventType codes that have a rate + APPEAL (STAGE_BILLING is composite, no rate).
+    # Seed: all FeeEventType codes that have a rate + APPEAL. Amounts are gross (כולל מע"מ, 18% VAT).
     # Idempotent on PostgreSQL: UPSERT so re-running upgrade does not fail on duplicate key.
     seed = [
-        ("COURT_STAGE_1_DEFENSE", "20000.00"),
-        ("COURT_STAGE_2_DAMAGES", "15000.00"),
-        ("COURT_STAGE_3_EVIDENCE", "15000.00"),
-        ("COURT_STAGE_4_PROOFS", "15000.00"),
-        ("COURT_STAGE_5_SUMMARIES", "10000.00"),
-        ("AMENDED_DEFENSE_PARTIAL", "10000.00"),
-        ("AMENDED_DEFENSE_FULL", "20000.00"),
-        ("THIRD_PARTY_NOTICE", "10000.00"),
-        ("ADDITIONAL_PROOF_HEARING", "1500.00"),
-        ("DEMAND_FIX", "5000.00"),
-        ("DEMAND_HOURLY", "700.00"),
+        ("COURT_STAGE_1_DEFENSE", "23600.00"),
+        ("COURT_STAGE_2_DAMAGES", "17700.00"),
+        ("COURT_STAGE_3_EVIDENCE", "17700.00"),
+        ("COURT_STAGE_4_PROOFS", "17700.00"),
+        ("COURT_STAGE_5_SUMMARIES", "11800.00"),
+        ("AMENDED_DEFENSE_PARTIAL", "11800.00"),
+        ("AMENDED_DEFENSE_FULL", "23600.00"),
+        ("THIRD_PARTY_NOTICE", "11800.00"),
+        ("ADDITIONAL_PROOF_HEARING", "1770.00"),
+        ("DEMAND_FIX", "5900.00"),
+        ("DEMAND_HOURLY", "826.00"),
         ("SMALL_CLAIMS_MANUAL", "0.00"),
-        ("APPEAL", "15000.00"),
+        ("APPEAL", "17700.00"),
     ]
     conn = op.get_bind()
     if conn.dialect.name == "postgresql":
