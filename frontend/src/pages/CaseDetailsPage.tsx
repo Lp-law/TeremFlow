@@ -351,7 +351,6 @@ export function CaseDetailsPage() {
             </div>
           </div>
         ) : null}
-      </div>
 
       {caseItem && activeModal === 'expense' ? (
         <AddExpenseModal
@@ -435,7 +434,7 @@ const MANUAL_ENTRY_FIELDS: {
   { key: 'fee_diff_ils', overrideKey: 'fee_diff_override', label: 'הפרש שכ״ט (₪)', allowNegative: true },
 ]
 
-function ManualEntryPanel({
+export function ManualEntryPanel({
   caseId,
   caseItem,
   onSaved,
@@ -680,8 +679,6 @@ function OverviewTab({
   setTab,
   refreshKey = 0,
   onSummaryFailed,
-  onCaseUpdated,
-  onToast,
   showRawImport = false,
   onOpenNotes,
 }: {

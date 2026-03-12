@@ -50,8 +50,6 @@ function formatProcedureStage(stage: string | null | undefined): string {
 
 const CASE_TYPES: CaseType[] = ['COURT', 'DEMAND_LETTER', 'SMALL_CLAIMS']
 
-const STAGE_OVERRIDE_CODES = Object.keys(PROCEDURE_STAGE_LABEL) as string[]
-
 type CreateCaseForm = {
   case_reference: string
   case_type: CaseType
@@ -76,12 +74,12 @@ export function CasesPage() {
   const [createError, setCreateError] = useState<string | null>(null)
   const [isCreating, setIsCreating] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
-  const [showBulkEditModal, setShowBulkEditModal] = useState(false)
+  const [, setShowBulkEditModal] = useState(false)
   const [bulkStatus, setBulkStatus] = useState<CaseStatus | ''>('')
   const [bulkCaseType, setBulkCaseType] = useState<CaseType | ''>('')
   const [bulkStageOverride, setBulkStageOverride] = useState<string>('') // '' = don't change, '__CLEAR__' = clear, or code
-  const [bulkSaving, setBulkSaving] = useState(false)
-  const [bulkError, setBulkError] = useState<string | null>(null)
+  const [, setBulkSaving] = useState(false)
+  const [, setBulkError] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [deleteModalCase, setDeleteModalCase] = useState<CaseOut | null>(null)
   const [deleteReason, setDeleteReason] = useState('')
@@ -170,7 +168,7 @@ export function CasesPage() {
     else setSelectedIds(new Set(filtered.map((c) => c.id)))
   }
 
-  async function saveBulkEdit() {
+  async function _saveBulkEdit() {
     const updates: Record<string, unknown> = {}
     if (bulkStatus) updates.status = bulkStatus
     if (bulkCaseType) updates.case_type = bulkCaseType
@@ -201,6 +199,7 @@ export function CasesPage() {
       setBulkSaving(false)
     }
   }
+  void _saveBulkEdit // kept for when bulk-edit UI is re-enabled
 
   async function createCase(e: React.FormEvent) {
     e.preventDefault()
