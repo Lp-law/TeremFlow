@@ -68,6 +68,8 @@ class RetainerLedgerOut(BaseModel):
     snapshot_through_month: str | None
     snapshot_paid_ils: Decimal
     current_credit_ils: Decimal
+    charged_months_count: int  # number of accrual rows (includes manual/ledger months)
+    retainer_paid_total_ils_gross: Decimal  # sum of all payments (includes manual)
     rows: list[RetainerLedgerRow]
 
 

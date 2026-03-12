@@ -2022,15 +2022,19 @@ function RetainerPanel({
 
   const cfg = ledger?.config
   const monthlyDisplay = cfg ? `${formatILS(cfg.monthly_base_net_ils)} + מע״מ ${cfg.vat_pct} = ${formatILS(cfg.monthly_gross_ils)}` : '—'
-  const chargedMonths = overview?.retainer?.charged_months_count ?? '—'
+  const chargedMonths = ledger?.charged_months_count ?? overview?.retainer?.charged_months_count ?? '—'
   const retainerCharged = overview ? toNumber(overview.retainer.retainer_charged_to_date_ils ?? 0) : null
+  const retainerPaidTotal = ledger != null ? toNumber(ledger.retainer_paid_total_ils_gross ?? 0) : null
 
   return (
     <div className="space-y-6 text-right">
       {error ? <div className="rounded-xl bg-amber-500/20 border border-amber-500/50 px-4 py-3 text-amber-800 dark:text-amber-200">{error}</div> : null}
-      {/* סה״כ חודשי חיוב + theoretical charged */}
+      {/* סה״כ חודשי חיוב (מהפנקס כולל ידני), סה״כ ששולם (כולל ידני), תיאורטי */}
       <div className="card-soft p-4">
         <div className="text-sm text-muted">סה״כ חודשי חיוב: <span className="font-semibold text-foreground">{chargedMonths}</span></div>
+        {retainerPaidTotal != null ? (
+          <div className="text-sm text-muted mt-1">סה״כ הריטיינר ששולם: <span className="font-semibold text-foreground">{formatILS(retainerPaidTotal)}</span></div>
+        ) : null}
         <div className="text-xs text-muted mt-1">שכ״ט ששולם עד כה (תיאורטי): {retainerCharged != null ? formatILS(retainerCharged) : '—'}</div>
       </div>
 
@@ -2143,7 +2147,7 @@ function RetainerPanel({
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
             <div className="font-semibold">פנקס ריטיינר חודשי</div>
-            <div className="text-sm text-muted mt-1">סה״כ חודשי חיוב: {chargedMonths} — נצבר, שולם ויתרת קרדיט לפי חודש</div>
+            <div className="text-sm text-muted mt-1">סה״כ חודשי חיוב: {chargedMonths} (כולל ידני) — נצבר, שולם ויתרת קרדיט לפי חודש</div>
           </div>
           <button type="button" onClick={onOpenAddPayment} className="btn btn-primary">
             הוסף תשלום ריטיינר

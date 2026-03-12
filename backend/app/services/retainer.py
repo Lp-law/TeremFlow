@@ -275,20 +275,6 @@ def build_retainer_ledger(db: Session, *, case_id: int) -> dict:
         "vat_pct": vat_pct,
         "monthly_gross_ils": retainer_gross_for_month(effective_end),
     }
-    rows: list[dict] = []
-    running = Decimal("0.00")
-    # Build rows: snapshot (if any), then accruals and payments interleaved by date.
-    # Snapshot row
-    if snapshot_paid > 0 and snapshot_through is not None:
-        running = snapshot_paid
-        rows.append({
-            "month": snapshot_through.strftime("%Y-%m"),
-            "accrued_ils": Decimal("0"),
-            "paid_ils": snapshot_paid,
-            "running_credit_ils": running,
-            "row_type": "snapshot",
-            "notes": "from snapshot",
-        })
     accruals = (
         db.query(RetainerAccrual)
         .filter(RetainerAccrual.case_id == case_id)
@@ -302,13 +288,21 @@ def build_retainer_ledger(db: Session, *, case_id: int) -> dict:
         .all()
     )
 
-    # Sort key: (date, type) so snapshot=0, accrual=1, payment=2. Accrual rows: no notes.
+    # Build merged list (snapshot + accruals + payments) then sort chronologically by (date, type).
     def row_sort_key(item):
         d, row_type, _ = item
         order = 0 if row_type == "snapshot" else (1 if row_type == "accrual" else 2)
         return (d, order)
 
     merged: list[tuple[dt.date, str, dict]] = []
+    if snapshot_paid > 0 and snapshot_through is not None:
+        merged.append((snapshot_through, "snapshot", {
+            "month": snapshot_through.strftime("%Y-%m"),
+            "accrued_ils": Decimal("0"),
+            "paid_ils": snapshot_paid,
+            "row_type": "snapshot",
+            "notes": "from snapshot",
+        }))
     for a in accruals:
         amt = q_ils(Decimal(str(a.amount_ils_gross)))
         paid = amt if a.is_paid else Decimal("0")
@@ -332,6 +326,8 @@ def build_retainer_ledger(db: Session, *, case_id: int) -> dict:
 
     merged.sort(key=row_sort_key)
 
+    rows: list[dict] = []
+    running = Decimal("0.00")
     for _d, _t, row_dict in merged:
         r_type = row_dict["row_type"]
         if r_type == "accrual":
@@ -341,12 +337,16 @@ def build_retainer_ledger(db: Session, *, case_id: int) -> dict:
         row_dict["running_credit_ils"] = running
         rows.append(row_dict)
 
+    charged_months_count = sum(1 for r in rows if r.get("row_type") == "accrual")
+
     return {
         "config": config,
         "anchor_date": anchor.isoformat(),
         "snapshot_through_month": snapshot_through.isoformat() if snapshot_through else None,
         "snapshot_paid_ils": snapshot_paid,
         "current_credit_ils": current_credit,
+        "charged_months_count": charged_months_count,
+        "retainer_paid_total_ils_gross": summary["retainer_paid_total_ils_gross"],
         "rows": rows,
     }
 

@@ -178,6 +178,8 @@ export type RetainerLedger = {
   snapshot_through_month: string | null
   snapshot_paid_ils: string | number
   current_credit_ils: string | number
+  charged_months_count: number
+  retainer_paid_total_ils_gross: string | number
   rows: RetainerLedgerRow[]
 }
 
