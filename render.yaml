@@ -34,7 +34,8 @@ services:
     name: teremflow-frontend
     runtime: static
     rootDir: frontend
-    buildCommand: npm install --no-fund --no-audit && npm run build
+    # VITE_GIT_SHA is set from RENDER_GIT_COMMIT at build time so footer shows frontend build sha.
+    buildCommand: export VITE_GIT_SHA="${RENDER_GIT_COMMIT:-unknown}" && npm install --no-fund --no-audit && npm run build
     staticPublishPath: dist
     routes:
       - type: rewrite

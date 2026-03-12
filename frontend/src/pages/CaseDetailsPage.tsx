@@ -699,12 +699,29 @@ function OverviewTab({
   const [warnings, setWarnings] = useState<CaseWarning[]>([])
   const [warningsLoading, setWarningsLoading] = useState(true)
 
+  const debugRetainerSource =
+    showRawImport &&
+    typeof window !== 'undefined' &&
+    (localStorage.getItem('teremflow_debug') === '1' || window.location.search.includes('debug=1'))
+
   useEffect(() => {
     let cancelled = false
     setOverviewLoading(true)
     setOverviewError(null)
-    apiFetch<CaseOverviewSummary>(`/cases/${caseId}/overview-summary`)
-      .then((d) => { if (!cancelled) setOverview(d) })
+    const endpoint = `/cases/${caseId}/overview-summary`
+    apiFetch<CaseOverviewSummary>(endpoint)
+      .then((d) => {
+        if (!cancelled) {
+          setOverview(d)
+          if (debugRetainerSource && d?.retainer) {
+            console.log('[TeremFlow debug] overview-summary endpoint: GET', endpoint)
+            console.log('[TeremFlow debug] retainer_charged_to_date_ils:', d.retainer.retainer_charged_to_date_ils)
+            console.log('[TeremFlow debug] retainer_regular_theoretical_ils:', (d.retainer as { retainer_regular_theoretical_ils?: unknown }).retainer_regular_theoretical_ils)
+            console.log('[TeremFlow debug] retainer_legacy_theoretical_ils:', (d.retainer as { retainer_legacy_theoretical_ils?: unknown }).retainer_legacy_theoretical_ils)
+            console.log('[TeremFlow debug] overview-summary response:', JSON.stringify(d, null, 2))
+          }
+        }
+      })
       .catch((e: any) => {
         if (!cancelled) {
           setOverviewError(e?.message || 'שגיאה')
@@ -713,7 +730,7 @@ function OverviewTab({
       })
       .finally(() => { if (!cancelled) setOverviewLoading(false) })
     return () => { cancelled = true }
-  }, [caseId, refreshKey, onSummaryFailed])
+  }, [caseId, refreshKey, onSummaryFailed, debugRetainerSource])
 
   useEffect(() => {
     let cancelled = false
@@ -1955,15 +1972,29 @@ function RetainerPanel({
   const isFrozen = !!caseItem.retainer_is_frozen
   const frozenAt = caseItem.retainer_frozen_at ?? null
 
+  const debugRetainerSource =
+    isAdmin &&
+    typeof window !== 'undefined' &&
+    (localStorage.getItem('teremflow_debug') === '1' || window.location.search.includes('debug=1'))
+
   async function load() {
     setError(null)
     setIsLoading(true)
+    const endpoint = `/cases/${caseId}/overview-summary`
     const [ledgerResult, overviewResult] = await Promise.allSettled([
       apiFetch<RetainerLedger>(`/cases/${caseId}/retainer/ledger`),
-      apiFetch<CaseOverviewSummary>(`/cases/${caseId}/overview-summary`),
+      apiFetch<CaseOverviewSummary>(endpoint),
     ])
     setLedger(ledgerResult.status === 'fulfilled' ? ledgerResult.value : null)
-    setOverview(overviewResult.status === 'fulfilled' ? overviewResult.value : null)
+    const overviewData = overviewResult.status === 'fulfilled' ? overviewResult.value : null
+    setOverview(overviewData)
+    if (debugRetainerSource && overviewData?.retainer) {
+      console.log('[TeremFlow debug] overview-summary endpoint: GET', endpoint)
+      console.log('[TeremFlow debug] retainer_charged_to_date_ils:', overviewData.retainer.retainer_charged_to_date_ils)
+      console.log('[TeremFlow debug] retainer_regular_theoretical_ils:', overviewData.retainer.retainer_regular_theoretical_ils)
+      console.log('[TeremFlow debug] retainer_legacy_theoretical_ils:', overviewData.retainer.retainer_legacy_theoretical_ils)
+      console.log('[TeremFlow debug] overview-summary response:', JSON.stringify(overviewData, null, 2))
+    }
     if (ledgerResult.status === 'rejected' && overviewResult.status === 'rejected') {
       setError(overviewResult.reason?.message || ledgerResult.reason?.message || 'שגיאה')
     } else {

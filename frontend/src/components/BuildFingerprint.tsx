@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react'
 import { API_BASE_URL } from '../lib/api'
 
+const FRONTEND_SHA =
+  (typeof import.meta !== 'undefined' && (import.meta as { env?: { VITE_GIT_SHA?: string } }).env?.VITE_GIT_SHA) ||
+  'unknown'
+
 type VersionResponse = {
   git_sha?: string
   build_time_utc?: string
@@ -8,20 +12,20 @@ type VersionResponse = {
   service?: string
 }
 
-type FingerprintState =
+type BackendState =
   | { kind: 'ok'; sha: string }
   | { kind: 'fail'; reason: string }
   | null
 
 export function BuildFingerprint() {
-  const [state, setState] = useState<FingerprintState>(null)
+  const [backendState, setBackendState] = useState<BackendState>(null)
 
   useEffect(() => {
     const url = `${API_BASE_URL}/version`
     fetch(url, { credentials: 'include', headers: { Accept: 'application/json' } })
       .then((res) => {
         if (!res.ok) {
-          setState({ kind: 'fail', reason: `${res.status}` })
+          setBackendState({ kind: 'fail', reason: `${res.status}` })
           return null
         }
         return res.json() as Promise<VersionResponse>
@@ -29,29 +33,32 @@ export function BuildFingerprint() {
       .then((data) => {
         if (data === null) return
         if (data?.git_sha != null && data.git_sha !== '') {
-          setState({ kind: 'ok', sha: data.git_sha })
+          setBackendState({ kind: 'ok', sha: data.git_sha })
         } else {
-          setState({ kind: 'fail', reason: 'no sha' })
+          setBackendState({ kind: 'fail', reason: 'no sha' })
         }
       })
       .catch((e: unknown) => {
         const msg = e instanceof Error ? e.message : String(e)
-        setState({ kind: 'fail', reason: msg.slice(0, 40) })
+        setBackendState({ kind: 'fail', reason: msg.slice(0, 40) })
       })
   }, [])
 
-  const displayText =
-    state === null
+  const backendDisplay =
+    backendState === null
       ? '…'
-      : state.kind === 'ok'
-        ? state.sha
-        : `unavailable (${state.reason})`
+      : backendState.kind === 'ok'
+        ? backendState.sha
+        : `unavailable (${backendState.reason})`
 
   return (
     <footer className="mt-auto py-2 px-4 text-center text-xs text-muted" role="contentinfo">
-      <span className="me-1">Build:</span>
-      <span dir="ltr" className="font-mono">
-        {displayText}
+      <span className="me-2" dir="ltr">
+        Frontend: <span className="font-mono">{FRONTEND_SHA}</span>
+      </span>
+      <span className="me-2">|</span>
+      <span className="me-2" dir="ltr">
+        Backend: <span className="font-mono">{backendDisplay}</span>
       </span>
     </footer>
   )
