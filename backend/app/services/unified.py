@@ -27,6 +27,7 @@ from app.services.retainer import (
     add_months,
     count_charged_months,
     get_retainer_anchor_date,
+    is_legacy_note,
     retainer_gross_for_month,
 )
 
@@ -96,15 +97,17 @@ def charged_months_count(case: Case) -> int:
 
 
 def _legacy_retainer_theoretical_ils(db: Session, case_id: int) -> Decimal:
-    """Sum of amount_ils_gross for retainer_payments with note starting with 'LEGACY' (legacy range entries).
-    Part of theoretical charged; these payments remain in ledger as paid but add to theoretical total.
+    """Legacy theoretical = 945+VAT per month for each month covered by LEGACY payments.
+    A payment is LEGACY if is_legacy_note(note). We use retainer_gross_for_month(payment_date)
+    so theoretical is months × official rate (VAT by month), not stored amount.
     """
     payments = db.query(RetainerPayment).filter(RetainerPayment.case_id == case_id).all()
     legacy_total = Decimal("0.00")
     for p in payments:
-        note = (p.note or "").strip()
-        if note.upper().startswith("LEGACY"):
-            legacy_total += Decimal(str(p.amount_ils_gross))
+        if not is_legacy_note(p.note):
+            continue
+        month_first = _month_start(p.payment_date)
+        legacy_total += retainer_gross_for_month(month_first)
     return q_ils(legacy_total)
 
 

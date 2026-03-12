@@ -32,6 +32,14 @@ def retainer_gross_for_month(accrual_month: dt.date) -> Decimal:
     return q_ils(RETAINER_BASE_NET_ILS * (Decimal("1") + rate))
 
 
+def is_legacy_note(note: str | None) -> bool:
+    """True if note is non-null, trimmed, and starts with 'LEGACY' case-insensitive (legacy range payments)."""
+    if note is None:
+        return False
+    s = note.strip()
+    return len(s) > 0 and s.upper().startswith("LEGACY")
+
+
 def _month_start(d: dt.date) -> dt.date:
     return dt.date(d.year, d.month, 1)
 

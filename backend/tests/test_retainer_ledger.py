@@ -21,6 +21,30 @@ from app.services.unified import (
 )
 
 
+def test_legacy_theoretical_by_months_not_stored_amount(db: Session):
+    """Legacy theoretical = retainer_gross_for_month(month) per LEGACY payment, not sum of stored amounts."""
+    c = _minimal_case(db, retainer_anchor_date=dt.date(2024, 7, 1))
+    update_case_retainer_dates(
+        db, case_id=c.id, retainer_end_date=dt.date(2024, 9, 30), retainer_end_date_sent=True
+    )
+    db.refresh(c)
+    # One LEGACY payment with wrong stored amount (999); should still count as 1 month @ 1105.65
+    db.add(
+        RetainerPayment(
+            case_id=c.id,
+            payment_date=dt.date(2024, 3, 1),
+            amount_ils_gross=Decimal("999.00"),
+            note="LEGACY: manual entry",
+        )
+    )
+    db.commit()
+    db.refresh(c)
+    charged = retainer_charged_to_date_ils(db, c)
+    monthly = retainer_gross_for_month(dt.date(2024, 7, 1))
+    expected = 3 * monthly + retainer_gross_for_month(dt.date(2024, 3, 1))  # 3 regular + 1 legacy (formula)
+    assert charged == expected
+
+
 def _minimal_case(db: Session, **kwargs) -> Case:
     defaults = {
         "case_reference": "ledger-test",
@@ -105,6 +129,20 @@ def test_charged_months_anchor_jan_end_feb_two_months(db: Session):
     db.refresh(c)
     setattr(c, "retainer_end_date", dt.date(2024, 2, 1))
     assert charged_months_count(c) == 2
+
+
+def test_clearing_end_date_works(db: Session):
+    """PATCH retainer dates with retainer_end_date=null clears it; effective_end becomes today (or frozen)."""
+    c = _minimal_case(db)
+    update_case_retainer_dates(
+        db, case_id=c.id, retainer_end_date=dt.date(2024, 9, 30), retainer_end_date_sent=True
+    )
+    db.refresh(c)
+    assert getattr(c, "retainer_end_date", None) == dt.date(2024, 9, 30)
+    update_case_retainer_dates(db, case_id=c.id, retainer_end_date=None, retainer_end_date_sent=True)
+    c = db.query(Case).filter(Case.id == c.id).first()
+    assert c is not None
+    assert getattr(c, "retainer_end_date", None) is None
 
 
 def test_ledger_february_payments_in_feb_paid_ils(db: Session):

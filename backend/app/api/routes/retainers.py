@@ -147,6 +147,29 @@ def ledger(case_id: int, db: Session = Depends(get_db), _=Depends(require_auth))
     return RetainerLedgerOut(**data)
 
 
+@router.get("/debug-theoretical")
+def debug_theoretical(
+    case_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
+    """Admin-only: legacy/regular theoretical and total for a case (verify deploy)."""
+    from app.services import unified as unified_service
+    c = _get_case_or_404(db, case_id)
+    regular = unified_service._regular_retainer_theoretical_ils(db, c)
+    legacy = unified_service._legacy_retainer_theoretical_ils(db, case_id)
+    total = unified_service.retainer_charged_to_date_ils(db, c)
+    payments = db.query(RetainerPayment).filter(RetainerPayment.case_id == case_id).all()
+    legacy_months_count = sum(1 for p in payments if retainer_service.is_legacy_note(p.note))
+    return {
+        "case_id": case_id,
+        "legacy_months_count": legacy_months_count,
+        "legacy_theoretical_ils": float(legacy),
+        "regular_theoretical_ils": float(regular),
+        "retainer_charged_to_date_ils": float(total),
+    }
+
+
 @router.patch("/dates", response_model=CaseOut)
 def update_retainer_dates(case_id: int, payload: RetainerDatesUpdate, db: Session = Depends(get_db), _=Depends(require_auth)):
     """Update retainer_anchor_date, retainer_snapshot_through_month, and/or retainer_end_date (send null to clear end date)."""

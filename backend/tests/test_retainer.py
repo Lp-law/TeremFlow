@@ -4,6 +4,7 @@ from decimal import Decimal
 from app.services.retainer import (
     get_retainer_anchor_date,
     get_retainer_start_month,
+    is_legacy_note,
     retainer_gross_for_month,
     vat_rate_for_month,
 )
@@ -45,5 +46,18 @@ def test_retainer_gross_dec_2024():
 def test_retainer_gross_jan_2025():
     """945 + 18% VAT = 1115.10"""
     assert retainer_gross_for_month(dt.date(2025, 1, 1)) == Decimal("1115.10")
+
+
+def test_is_legacy_note_robust():
+    """LEGACY detection: trim, case-insensitive; null/empty not legacy."""
+    assert is_legacy_note("LEGACY") is True
+    assert is_legacy_note("legacy") is True
+    assert is_legacy_note("LEGACY: past") is True
+    assert is_legacy_note("  LEGACY  ") is True
+    assert is_legacy_note(None) is False
+    assert is_legacy_note("") is False
+    assert is_legacy_note("  ") is False
+    assert is_legacy_note("manual") is False
+    assert is_legacy_note("LEGACYX") is True  # starts with LEGACY
 
 
