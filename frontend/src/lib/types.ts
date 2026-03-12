@@ -52,6 +52,8 @@ export type CaseOut = {
   expenses_total_ils_gross?: string | number | null
   retainer_is_frozen?: boolean
   retainer_frozen_at?: string | null
+  retainer_end_date?: string | null
+  case_notes?: string | null
   insurer_started: boolean
   insurer_start_date: string | null
   /** Manual overrides for deductible/overview (from GET /cases/{id}). */

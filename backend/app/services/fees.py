@@ -144,8 +144,45 @@ def soft_delete_fee_event(db: Session, *, case_id: int, event_id: int, user_id: 
     return e
 
 
+def fee_stage_gross_ils(rate: FeeStageRate) -> Decimal:
+    """Compute gross ILS for a rate: if net_ils set then gross = round(net_ils * (1+vat_pct), 2); else amount_ils."""
+    net = getattr(rate, "net_ils", None)
+    if net is not None and getattr(rate, "vat_pct", None) is not None:
+        vat = Decimal(str(rate.vat_pct))
+        return q_ils(round(Decimal(str(net)) * (1 + vat), 2))
+    return q_ils(Decimal(str(rate.amount_ils)))
+
+
 def get_fee_stage_rates(db: Session) -> list[FeeStageRate]:
     return db.query(FeeStageRate).filter(FeeStageRate.is_active).order_by(FeeStageRate.code).all()
+
+
+ALLOWED_VAT_PCT = (Decimal("0.17"), Decimal("0.18"))
+
+
+def update_fee_stage_rate_vat(
+    db: Session, *, code: str, vat_pct: Decimal | None = None, net_ils: Decimal | None = None
+) -> FeeStageRate:
+    """Admin: set vat_pct (0.17 or 0.18) and optionally net_ils. If rate had only amount_ils, derive net from 18% then apply new vat."""
+    rate = db.query(FeeStageRate).filter(FeeStageRate.code == code).first()
+    if not rate:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rate not found")
+    if vat_pct is not None:
+        v = q_ils(vat_pct)
+        if v not in ALLOWED_VAT_PCT:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="vat_pct must be 0.17 or 0.18",
+            )
+        rate.vat_pct = v
+        # If rate had no net_ils, derive from current gross (assume 18%) so future gross = net_ils * (1+vat_pct)
+        if getattr(rate, "net_ils", None) is None:
+            rate.net_ils = q_ils(round(Decimal(str(rate.amount_ils)) / Decimal("1.18"), 2))
+    if net_ils is not None:
+        rate.net_ils = q_ils(net_ils)
+    db.commit()
+    db.refresh(rate)
+    return rate
 
 
 def get_billed_codes_for_case(db: Session, case_id: int) -> list[str]:
@@ -191,7 +228,7 @@ def create_stage_billing_event(db: Session, *, case_id: int, payload, user_id: i
     # Resolve rates for all selected (so we can show base_total_selected and delta_total)
     all_codes = sorted(set(codes_selected) | set(new_codes))
     rates_rows = db.query(FeeStageRate).filter(FeeStageRate.code.in_(all_codes), FeeStageRate.is_active).all()
-    rates_map = {r.code: Decimal(str(r.amount_ils)) for r in rates_rows}
+    rates_map = {r.code: fee_stage_gross_ils(r) for r in rates_rows}
     missing = [c for c in codes_selected if c not in rates_map]
     if missing:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unknown or inactive rate for: {missing}")

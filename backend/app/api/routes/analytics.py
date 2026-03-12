@@ -46,7 +46,7 @@ router = APIRouter()
 # Hebrew labels for procedure stage codes (closing_stage distribution)
 STAGE_CODE_LABELS: dict[str, str] = {
     "COURT_STAGE_1_DEFENSE": "שלב 1 — כתב הגנה",
-    "COURT_STAGE_2_DAMAGES": "שלב 2 — חישובי נזק",
+    "COURT_STAGE_2_DAMAGES": "שלב 2 — תחשיבי נזק",
     "COURT_STAGE_3_EVIDENCE": "שלב 3 — הגשת ראיות",
     "COURT_STAGE_4_PROOFS": "שלב 4 — ראיות",
     "COURT_STAGE_5_SUMMARIES": "שלב 5 — סיכומים",

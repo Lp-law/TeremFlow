@@ -257,8 +257,10 @@ def update_case_retainer_dates(
     case_id: int,
     retainer_anchor_date: dt.date | None = None,
     retainer_snapshot_through_month: dt.date | None = None,
+    retainer_end_date: dt.date | None = None,
+    retainer_end_date_sent: bool = False,
 ) -> Case:
-    """Update retainer_anchor_date and/or retainer_snapshot_through_month. Snapshot is normalized to first-of-month."""
+    """Update retainer_anchor_date, retainer_snapshot_through_month, and/or retainer_end_date. Set retainer_end_date_sent=True with retainer_end_date=None to clear."""
     from app.services.unified import get_effective_end_date
 
     c = get_case_if_not_deleted(db, case_id)
@@ -273,6 +275,8 @@ def update_case_retainer_dates(
             1,
         )
         c.retainer_snapshot_through_month = first
+    if retainer_end_date_sent:
+        c.retainer_end_date = retainer_end_date
     db.commit()
     db.refresh(c)
     # Ensure accruals exist up to effective end (respects freeze)
@@ -286,6 +290,17 @@ def update_case_retainer_dates(
             snapshot_through_month=c.retainer_snapshot_through_month,
             up_to=get_effective_end_date(c),
         )
+    return c
+
+
+def update_case_notes(db: Session, *, case_id: int, case_notes: str | None) -> Case:
+    """Update case_notes. Pass empty string to clear; None leaves unchanged if using PATCH with omit."""
+    c = get_case_if_not_deleted(db, case_id)
+    if not c:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+    c.case_notes = case_notes if case_notes is not None else c.case_notes
+    db.commit()
+    db.refresh(c)
     return c
 
 
@@ -458,6 +473,8 @@ def to_case_out(
         "excess_remaining_ils_gross": excess,
         "retainer_is_frozen": getattr(case, "retainer_is_frozen", False),
         "retainer_frozen_at": getattr(case, "retainer_frozen_at", None),
+        "retainer_end_date": getattr(case, "retainer_end_date", None),
+        "case_notes": getattr(case, "case_notes", None),
         "expenses_total_ils_gross": getattr(case, "expenses_total_ils_gross", None),
         "manual_overrides_json": getattr(case, "manual_overrides_json", None) or {},
     }

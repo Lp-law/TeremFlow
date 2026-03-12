@@ -47,7 +47,7 @@ const CASE_TYPE_LABEL: Record<string, string> = {
 
 const FEE_EVENT_LABEL: Record<string, string> = {
   COURT_STAGE_1_DEFENSE: 'שלב 1 — כתב הגנה',
-  COURT_STAGE_2_DAMAGES: 'שלב 2 — חישובי נזק',
+  COURT_STAGE_2_DAMAGES: 'שלב 2 — תחשיבי נזק',
   COURT_STAGE_3_EVIDENCE: 'שלב 3 — הגשת ראיות',
   COURT_STAGE_4_PROOFS: 'שלב 4 — הוכחות',
   COURT_STAGE_5_SUMMARIES: 'שלב 5 — סיכומים',
@@ -60,6 +60,16 @@ const FEE_EVENT_LABEL: Record<string, string> = {
   SMALL_CLAIMS_MANUAL: 'תביעות קטנות — ידני',
   APPEAL: 'ערעור',
   STAGE_BILLING: 'חיוב לפי שלבים',
+  // תיקים ישנים (VAT 17%)
+  LEGACY_COURT_STAGE_1_DEFENSE: 'כתב הגנה',
+  LEGACY_COURT_STAGE_2_DAMAGES: 'תחשיב נזק',
+  LEGACY_COURT_STAGE_3_EVIDENCE: 'ראיות',
+  LEGACY_COURT_STAGE_4_PROOFS: 'הוכחות',
+  LEGACY_COURT_STAGE_5_SUMMARIES: 'סיכומים',
+  LEGACY_AMENDED_DEFENSE_PARTIAL: 'הגנה מתוקן',
+  LEGACY_AMENDED_DEFENSE_FULL: 'כתב הגנה מתוקן מלא',
+  LEGACY_THIRD_PARTY_NOTICE: 'הודעת צד שלישי',
+  LEGACY_ADDITIONAL_PROOF_HEARING: 'ישיבת הוכחות נוספת',
 }
 
 /** Format current_procedure_stage from API (code, code(+k), or STAGE_BILLING:0) for display */
@@ -91,7 +101,7 @@ export function CaseDetailsPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  type ModalKind = 'expense' | 'retainerPayment' | 'stageBilling'
+  type ModalKind = 'expense' | 'retainerPayment' | 'stageBilling' | 'notes'
   const [activeModal, setActiveModal] = useState<ModalKind | null>(null)
   const [retainerReloadKey, setRetainerReloadKey] = useState(0)
   const [feesReloadKey, setFeesReloadKey] = useState(0)
@@ -259,6 +269,7 @@ export function CaseDetailsPage() {
                   onCaseUpdated={load}
                   onToast={(msg) => { setToast(msg); setTimeout(() => setToast(null), 3000) }}
                   showRawImport={isAdmin}
+                  onOpenNotes={() => setActiveModal('notes')}
                 />
               ) : null}
 
@@ -300,6 +311,7 @@ export function CaseDetailsPage() {
                 <RetainerPanel
                   caseId={caseItem.id}
                   caseItem={caseItem}
+                  isAdmin={isAdmin}
                   onOpenAddPayment={() => setActiveModal('retainerPayment')}
                   retainerReloadKey={retainerReloadKey}
                   onRetainerChange={() => setRefreshOverviewDeductibleKey((k) => k + 1)}
@@ -353,12 +365,26 @@ export function CaseDetailsPage() {
       {caseItem && activeModal === 'stageBilling' ? (
         <StageBillingModal
           caseId={caseItem.id}
+          isAdmin={isAdmin}
           onClose={() => setActiveModal(null)}
           onSaved={async () => {
             setActiveModal(null)
             setFeesReloadKey((k) => k + 1)
             await load()
           }}
+        />
+      ) : null}
+      {caseItem && activeModal === 'notes' ? (
+        <CaseNotesModal
+          caseId={caseItem.id}
+          initialNotes={caseItem.case_notes ?? ''}
+          onClose={() => setActiveModal(null)}
+          onSaved={async (updated) => {
+            setCaseItem((prev) => (prev ? { ...prev, case_notes: updated } : null))
+            setActiveModal(null)
+            setToast('נשמר')
+          }}
+          onToast={(msg) => setToast(msg)}
         />
       ) : null}
     </div>
@@ -550,6 +576,73 @@ function ManualEntryRow({
   )
 }
 
+function CaseNotesModal({
+  caseId,
+  initialNotes,
+  onClose,
+  onSaved,
+  onToast,
+}: {
+  caseId: number
+  initialNotes: string
+  onClose: () => void
+  onSaved: (updatedNotes: string) => void | Promise<void>
+  onToast: (msg: string) => void
+}) {
+  const [notes, setNotes] = useState(initialNotes)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setNotes(initialNotes)
+  }, [initialNotes])
+
+  async function handleSave() {
+    setError(null)
+    setSaving(true)
+    try {
+      await apiFetch(`/cases/${caseId}/notes`, {
+        method: 'PATCH',
+        body: JSON.stringify({ case_notes: notes }),
+      })
+      await onSaved(notes)
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'שגיאה בשמירה'
+      setError(msg)
+      onToast(msg)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" role="dialog" aria-modal="true" aria-labelledby="notes-modal-title">
+      <div className="bg-surface border border-border rounded-xl shadow-xl max-w-lg w-full max-h-[80vh] flex flex-col">
+        <div className="p-4 border-b border-border flex items-center justify-between">
+          <h2 id="notes-modal-title" className="text-lg font-semibold">הערות</h2>
+          <button type="button" onClick={onClose} className="btn btn-ghost btn-sm" aria-label="סגור">×</button>
+        </div>
+        <div className="p-4 flex-1 overflow-auto">
+          <textarea
+            className="input w-full min-h-[120px] resize-y"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="הערות חופשיות על התיק..."
+            aria-label="הערות"
+          />
+          {error ? <p className="text-sm text-red-400 mt-2" role="alert">{error}</p> : null}
+        </div>
+        <div className="p-4 border-t border-border flex gap-2 justify-end">
+          <button type="button" onClick={onClose} className="btn btn-secondary">ביטול</button>
+          <button type="button" onClick={handleSave} disabled={saving} className="btn btn-primary">
+            {saving ? '...' : 'שמור'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function OverviewTab({
   caseId,
   caseItem,
@@ -560,6 +653,7 @@ function OverviewTab({
   onCaseUpdated,
   onToast,
   showRawImport = false,
+  onOpenNotes,
 }: {
   caseId: number
   caseItem: CaseOut
@@ -570,6 +664,7 @@ function OverviewTab({
   onCaseUpdated?: () => void | Promise<void>
   onToast?: (msg: string) => void
   showRawImport?: boolean
+  onOpenNotes?: () => void
 }) {
   const [overview, setOverview] = useState<CaseOverviewSummary | null>(null)
   const [overviewLoading, setOverviewLoading] = useState(true)
@@ -752,6 +847,13 @@ function OverviewTab({
           <ReadOnlyRow label="סוג תיק" value={CASE_TYPE_LABEL[caseItem.case_type] ?? caseItem.case_type} />
           <ReadOnlyRow label="סטטוס" value={caseItem.status === 'OPEN' ? 'פתוח' : 'סגור'} />
           <ReadOnlyRow label="תאריך פתיחה" value={caseItem.open_date} />
+          {onOpenNotes ? (
+            <div className="md:col-span-2 flex justify-end">
+              <button type="button" onClick={onOpenNotes} className="btn btn-secondary btn-sm">
+                הערות
+              </button>
+            </div>
+          ) : null}
         </dl>
       </section>
 
@@ -1796,6 +1898,7 @@ function Field({
 function RetainerPanel({
   caseId,
   caseItem,
+  isAdmin = false,
   onOpenAddPayment,
   retainerReloadKey,
   onRetainerChange,
@@ -1804,6 +1907,7 @@ function RetainerPanel({
 }: {
   caseId: number
   caseItem: CaseOut
+  isAdmin?: boolean
   onOpenAddPayment: () => void
   retainerReloadKey: number
   onRetainerChange?: () => void
@@ -1817,6 +1921,9 @@ function RetainerPanel({
   const [anchorDate, setAnchorDate] = useState(caseItem.retainer_anchor_date?.slice(0, 10) ?? '')
   const [snapshotMonth, setSnapshotMonth] = useState(
     caseItem.retainer_snapshot_through_month ? String(caseItem.retainer_snapshot_through_month).slice(0, 7) : ''
+  )
+  const [retainerEndDate, setRetainerEndDate] = useState(
+    caseItem.retainer_end_date ? String(caseItem.retainer_end_date).slice(0, 10) : ''
   )
   const [datesSaveError, setDatesSaveError] = useState<string | null>(null)
   const [datesSaving, setDatesSaving] = useState(false)
@@ -1856,15 +1963,17 @@ function RetainerPanel({
     setSnapshotMonth(
       caseItem.retainer_snapshot_through_month ? String(caseItem.retainer_snapshot_through_month).slice(0, 7) : ''
     )
-  }, [caseItem.retainer_anchor_date, caseItem.retainer_snapshot_through_month])
+    setRetainerEndDate(caseItem.retainer_end_date ? String(caseItem.retainer_end_date).slice(0, 10) : '')
+  }, [caseItem.retainer_anchor_date, caseItem.retainer_snapshot_through_month, caseItem.retainer_end_date])
 
   async function saveDates() {
     setDatesSaveError(null)
     setDatesSaving(true)
     try {
-      const body: { retainer_anchor_date?: string; retainer_snapshot_through_month?: string } = {}
+      const body: { retainer_anchor_date?: string; retainer_snapshot_through_month?: string; retainer_end_date?: string | null } = {}
       if (anchorDate) body.retainer_anchor_date = anchorDate
       if (snapshotMonth) body.retainer_snapshot_through_month = `${snapshotMonth}-01`
+      body.retainer_end_date = retainerEndDate || null
       await apiFetch(`/cases/${caseId}/retainer/dates`, { method: 'PATCH', body: JSON.stringify(body) })
       await onCaseUpdated?.()
       onRetainerChange?.()
@@ -1906,16 +2015,10 @@ function RetainerPanel({
   return (
     <div className="space-y-6 text-right">
       {error ? <div className="rounded-xl bg-amber-500/20 border border-amber-500/50 px-4 py-3 text-amber-800 dark:text-amber-200">{error}</div> : null}
-      {/* Primary: charged months + theoretical charged (— when overview failed) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div className="card-soft p-4">
-          <div className="text-xs text-muted mb-1">מספר חודשי חיוב שחויבו מעוגן</div>
-          <div className="font-semibold">{chargedMonths}</div>
-        </div>
-        <div className="card-soft p-4">
-          <div className="text-xs text-muted mb-1">שכ״ט ששולם עד כה (תיאורטי)</div>
-          <div className="font-semibold">{retainerCharged != null ? formatILS(retainerCharged) : '—'}</div>
-        </div>
+      {/* סה״כ חודשי חיוב + theoretical charged */}
+      <div className="card-soft p-4">
+        <div className="text-sm text-muted">סה״כ חודשי חיוב: <span className="font-semibold text-foreground">{chargedMonths}</span></div>
+        <div className="text-xs text-muted mt-1">שכ״ט ששולם עד כה (תיאורטי): {retainerCharged != null ? formatILS(retainerCharged) : '—'}</div>
       </div>
 
       {/* Monthly rate (read-only) */}
@@ -1946,9 +2049,35 @@ function RetainerPanel({
         </div>
       </div>
 
-      {/* Editable: Snapshot עד חודש (YYYY-MM) */}
+      {/* Editable: תאריך סיום ריטיינר */}
       <div className="card-soft p-4">
-        <div className="text-xs text-muted mb-1">Snapshot עד חודש (ראשון בחודש)</div>
+        <div className="text-xs text-muted mb-1">תאריך סיום ריטיינר</div>
+        <div className="flex flex-wrap items-center gap-2 mt-1">
+          <input
+            type="date"
+            className="input py-2 w-40"
+            value={retainerEndDate}
+            onChange={(e) => setRetainerEndDate(e.target.value)}
+            aria-label="תאריך סיום ריטיינר"
+          />
+          <button
+            type="button"
+            onClick={saveDates}
+            disabled={datesSaving}
+            className="btn btn-primary btn-sm"
+          >
+            {datesSaving ? '...' : 'שמור'}
+          </button>
+        </div>
+        {retainerEndDate ? (
+          <div className="text-xs text-muted mt-1">הריטיינר מסתיים ב־{retainerEndDate}</div>
+        ) : null}
+      </div>
+
+      {/* Snapshot עד חודש — hidden for non-admin */}
+      {isAdmin ? (
+      <div className="card-soft p-4">
+        <div className="text-xs text-muted mb-1">Snapshot עד חודש (מתקדם, ראשון בחודש)</div>
         <div className="flex flex-wrap items-center gap-2 mt-1">
           <input
             type="month"
@@ -1967,6 +2096,7 @@ function RetainerPanel({
           </button>
         </div>
       </div>
+      ) : null}
       {datesSaveError ? (
         <p className="text-sm text-red-400 text-right" role="alert">{datesSaveError}</p>
       ) : null}
@@ -2000,7 +2130,7 @@ function RetainerPanel({
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
             <div className="font-semibold">פנקס ריטיינר חודשי</div>
-            <div className="text-sm text-muted mt-1">נצבר, שולם ויתרת קרדיט לפי חודש</div>
+            <div className="text-sm text-muted mt-1">סה״כ חודשי חיוב: {chargedMonths} — נצבר, שולם ויתרת קרדיט לפי חודש</div>
           </div>
           <button type="button" onClick={onOpenAddPayment} className="btn btn-primary">
             הוסף תשלום ריטיינר
@@ -2143,6 +2273,7 @@ function AddRetainerPaymentModal({ caseId, onClose, onSaved }: { caseId: number;
 const STAGE_BILLING_GROUPS: { title: string; codes: string[] }[] = [
   { title: 'שלבי בית משפט (1–5)', codes: ['COURT_STAGE_1_DEFENSE', 'COURT_STAGE_2_DAMAGES', 'COURT_STAGE_3_EVIDENCE', 'COURT_STAGE_4_PROOFS', 'COURT_STAGE_5_SUMMARIES'] },
   { title: 'בית משפט — נוסף', codes: ['THIRD_PARTY_NOTICE', 'AMENDED_DEFENSE_PARTIAL', 'AMENDED_DEFENSE_FULL', 'ADDITIONAL_PROOF_HEARING'] },
+  { title: 'תיקים ישנים', codes: ['LEGACY_COURT_STAGE_1_DEFENSE', 'LEGACY_COURT_STAGE_2_DAMAGES', 'LEGACY_COURT_STAGE_3_EVIDENCE', 'LEGACY_COURT_STAGE_4_PROOFS', 'LEGACY_COURT_STAGE_5_SUMMARIES', 'LEGACY_AMENDED_DEFENSE_PARTIAL', 'LEGACY_AMENDED_DEFENSE_FULL', 'LEGACY_THIRD_PARTY_NOTICE', 'LEGACY_ADDITIONAL_PROOF_HEARING'] },
   { title: 'מכתב דרישה', codes: ['DEMAND_FIX', 'DEMAND_HOURLY'] },
   { title: 'תביעות קטנות', codes: ['SMALL_CLAIMS_MANUAL'] },
   { title: 'ערעור', codes: ['APPEAL'] },
@@ -2430,9 +2561,9 @@ function DeleteFeeEventModal({
   )
 }
 
-type RateRow = { code: string; amount_ils: number }
+type RateRow = { code: string; amount_ils: number; gross_amount_ils?: number; vat_pct?: number; net_ils?: number }
 
-function StageBillingModal({ caseId, onClose, onSaved }: { caseId: number; onClose: () => void; onSaved: () => void }) {
+function StageBillingModal({ caseId, isAdmin = false, onClose, onSaved }: { caseId: number; isAdmin?: boolean; onClose: () => void; onSaved: () => void }) {
   const today = new Date().toISOString().slice(0, 10)
   const [eventDate, setEventDate] = useState(today)
   const [selectedCodes, setSelectedCodes] = useState<Set<string>>(new Set())
@@ -2445,6 +2576,13 @@ function StageBillingModal({ caseId, onClose, onSaved }: { caseId: number; onClo
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [showVatManagement, setShowVatManagement] = useState(false)
+  const [vatSaveCode, setVatSaveCode] = useState<string | null>(null)
+
+  async function loadRates() {
+    const r = await apiFetch<RateRow[]>('/fee-stage-rates')
+    setRates(r)
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -2471,7 +2609,7 @@ function StageBillingModal({ caseId, onClose, onSaved }: { caseId: number; onClo
 
   const rateByCode = useMemo(() => {
     const m: Record<string, number> = {}
-    rates.forEach((r) => { m[r.code] = r.amount_ils })
+    rates.forEach((r) => { m[r.code] = r.gross_amount_ils ?? r.amount_ils })
     return m
   }, [rates])
 
@@ -2658,6 +2796,59 @@ function StageBillingModal({ caseId, onClose, onSaved }: { caseId: number; onClo
         ) : null}
 
         {error ? <div className="mt-4 text-sm text-red-300 text-right">{error}</div> : null}
+
+        {isAdmin ? (
+          <div className="mt-5 border border-border/50 rounded-xl p-4">
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm text-muted"
+              onClick={() => setShowVatManagement((v) => !v)}
+            >
+              {showVatManagement ? 'סגור ניהול תעריפי שלבים' : 'ניהול תעריפי שלבים (מתקדם)'}
+            </button>
+            {showVatManagement ? (
+              <div className="mt-3 space-y-2 max-h-60 overflow-y-auto">
+                {rates.map((r) => {
+                  const gross = r.gross_amount_ils ?? r.amount_ils
+                  const vatPct = r.vat_pct != null ? Math.round(r.vat_pct * 100) : 18
+                  const saving = vatSaveCode === r.code
+                  return (
+                    <div key={r.code} className="flex flex-wrap items-center gap-3 text-sm border-b border-border/30 pb-2">
+                      <span className="font-medium">{FEE_EVENT_LABEL[r.code] ?? r.code}</span>
+                      <span className="text-muted">{formatILS(gross)}</span>
+                      <label className="flex items-center gap-1">
+                        <span className="text-muted">מע״מ:</span>
+                        <select
+                          className="input py-1 w-16"
+                          value={vatPct}
+                          disabled={saving}
+                          onChange={async (e) => {
+                            const val = Number(e.target.value)
+                            if (val !== 17 && val !== 18) return
+                            setVatSaveCode(r.code)
+                            try {
+                              await apiFetch(`/fee-stage-rates/${encodeURIComponent(r.code)}`, {
+                                method: 'PATCH',
+                                body: JSON.stringify({ vat_pct: val / 100 }),
+                              })
+                              await loadRates()
+                            } finally {
+                              setVatSaveCode(null)
+                            }
+                          }}
+                        >
+                          <option value={17}>17%</option>
+                          <option value={18}>18%</option>
+                        </select>
+                      </label>
+                      {saving ? <span className="text-muted text-xs">...</span> : null}
+                    </div>
+                  )
+                })}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="mt-6 flex gap-3 justify-end">
           <button type="button" onClick={onClose} className="btn btn-secondary" disabled={isSubmitting}>ביטול</button>

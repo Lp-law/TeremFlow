@@ -7,8 +7,10 @@ from sqlalchemy.orm import Session
 from app.models.case import Case
 from app.models.enums import CaseStatus, CaseType
 from app.services.unified import (
+    charged_months_count,
     excess_remaining_ils,
     expenses_total_ils,
+    get_effective_end_date,
     get_unified_summary,
     retainer_charged_to_date_ils,
 )
@@ -83,3 +85,16 @@ def test_get_unified_summary_uses_overrides(db: Session):
     assert summary["retainer_charged_to_date_ils"] == Decimal("1111.11")
     assert summary["fees_by_stages_ils"] == Decimal("2222.22")
     assert summary["excess_remaining_ils"] == Decimal("3333.33")
+
+
+def test_retainer_end_date_caps_charged_months(db: Session):
+    """With retainer_end_date set, effective_end is that date and charged_months_count stops at that month."""
+    c = _minimal_case(
+        retainer_anchor_date=dt.date(2024, 7, 1),
+        retainer_end_date=dt.date(2024, 9, 15),
+    )
+    db.add(c)
+    db.commit()
+    db.refresh(c)
+    assert get_effective_end_date(c) == dt.date(2024, 9, 15)
+    assert charged_months_count(c) == 3  # Jul, Aug, Sep

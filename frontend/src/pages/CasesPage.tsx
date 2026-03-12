@@ -9,7 +9,7 @@ import type { CaseOut, CaseStatus, CaseType } from '../lib/types'
 /** Labels for current_procedure_stage (fee event type) in list table. */
 const PROCEDURE_STAGE_LABEL: Record<string, string> = {
   COURT_STAGE_1_DEFENSE: 'שלב 1 — כתב הגנה',
-  COURT_STAGE_2_DAMAGES: 'שלב 2 — חישובי נזק',
+  COURT_STAGE_2_DAMAGES: 'שלב 2 — תחשיבי נזק',
   COURT_STAGE_3_EVIDENCE: 'שלב 3 — הגשת ראיות',
   COURT_STAGE_4_PROOFS: 'שלב 4 — הוכחות',
   COURT_STAGE_5_SUMMARIES: 'שלב 5 — סיכומים',

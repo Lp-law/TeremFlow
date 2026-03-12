@@ -110,12 +110,15 @@ def ledger(case_id: int, db: Session = Depends(get_db), _=Depends(require_auth))
 
 @router.patch("/dates", response_model=CaseOut)
 def update_retainer_dates(case_id: int, payload: RetainerDatesUpdate, db: Session = Depends(get_db), _=Depends(require_auth)):
-    """Update retainer_anchor_date and/or retainer_snapshot_through_month (normalized to first-of-month)."""
+    """Update retainer_anchor_date, retainer_snapshot_through_month, and/or retainer_end_date (send null to clear end date)."""
+    updates = payload.model_dump(exclude_unset=True)
     c = case_service.update_case_retainer_dates(
         db,
         case_id=case_id,
-        retainer_anchor_date=payload.retainer_anchor_date,
-        retainer_snapshot_through_month=payload.retainer_snapshot_through_month,
+        retainer_anchor_date=updates.get("retainer_anchor_date"),
+        retainer_snapshot_through_month=updates.get("retainer_snapshot_through_month"),
+        retainer_end_date=updates.get("retainer_end_date") if "retainer_end_date" in updates else None,
+        retainer_end_date_sent="retainer_end_date" in updates,
     )
     stages = case_service.get_latest_fee_stage_by_case_ids(db, [c.id])
     return CaseOut(**case_service.to_case_out(db, c, current_procedure_stage=stages.get(c.id)))

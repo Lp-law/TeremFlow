@@ -20,9 +20,10 @@ class RetainerFreezeRequest(BaseModel):
 
 
 class RetainerDatesUpdate(BaseModel):
-    """Update retainer_anchor_date and/or retainer_snapshot_through_month (YYYY-MM-01)."""
+    """Update retainer_anchor_date, retainer_snapshot_through_month (YYYY-MM-01), and/or retainer_end_date."""
     retainer_anchor_date: dt.date | None = None
     retainer_snapshot_through_month: dt.date | None = None  # Normalized to first-of-month in service
+    retainer_end_date: dt.date | None = None  # Stop retainer charging after this date
 
 
 class RetainerPaymentCreate(BaseModel):

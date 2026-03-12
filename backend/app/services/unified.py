@@ -60,12 +60,16 @@ def _safe_overrides(case: Case) -> dict[str, Any]:
 
 
 def get_effective_end_date(case: Case) -> dt.date:
-    """When frozen, retainer charged months stop at retainer_frozen_at; else today. Always returns date."""
+    """Effective end = min(today, retainer_end_date if set, retainer_frozen_at if frozen). Always returns date."""
+    today = dt.date.today()
+    end_date = getattr(case, "retainer_end_date", None)
+    if end_date is not None and isinstance(end_date, dt.date):
+        today = min(today, end_date)
     if getattr(case, "retainer_is_frozen", False):
         at = getattr(case, "retainer_frozen_at", None)
         if at is not None and isinstance(at, dt.date):
-            return at
-    return dt.date.today()
+            today = min(today, at)
+    return today
 
 
 def _effective_anchor_date(case: Case) -> dt.date | None:

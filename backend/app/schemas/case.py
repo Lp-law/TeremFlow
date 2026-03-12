@@ -60,8 +60,14 @@ class CaseOut(BaseModel):
     excess_remaining_ils_gross: Decimal  # unified: excess_total - retainer_charged - expenses_total
     retainer_is_frozen: bool = False
     retainer_frozen_at: dt.date | None = None
+    retainer_end_date: dt.date | None = None  # Stop retainer charging after this date
+    case_notes: str | None = None
     expenses_total_ils_gross: Decimal | None = None
     manual_overrides_json: dict | None = None
+
+
+class CaseNotesUpdate(BaseModel):
+    case_notes: str | None = None  # Empty string allowed; stored as-is (or null if omitted)
 
 
 class CaseUpdateStatus(BaseModel):

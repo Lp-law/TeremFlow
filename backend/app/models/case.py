@@ -60,6 +60,11 @@ class Case(Base):
     # Retainer freeze: when true, charged months and accruals stop at retainer_frozen_at
     retainer_is_frozen: Mapped[bool] = mapped_column(Boolean, default=False)
     retainer_frozen_at: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    # Retainer end date: stop charging after this date (inclusive of month)
+    retainer_end_date: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+
+    # Free-text case notes (user-editable)
+    case_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Single editable expenses total (replaces itemized UX for normal use)
     expenses_total_ils_gross: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)

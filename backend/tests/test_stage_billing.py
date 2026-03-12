@@ -10,6 +10,7 @@ from app.models.enums import CaseStatus, CaseType, FeeEventType
 from app.models.fee_stage_rate import FeeStageRate
 from app.services.fees import (
     create_stage_billing_event,
+    fee_stage_gross_ils,
     get_billed_codes_for_case,
     get_fee_stage_rates,
 )
@@ -59,6 +60,38 @@ def test_fee_stage_rate_stage1_is_gross(db, case_with_rates):
     stage1 = next((r for r in rates if r.code == "COURT_STAGE_1_DEFENSE"), None)
     assert stage1 is not None
     assert stage1.amount_ils == Decimal("23600.00")
+
+
+def test_fee_stage_gross_unchanged_when_no_net_ils(db, case_with_rates):
+    """Existing codes without net_ils: computed gross must equal stored amount_ils."""
+    rates = get_fee_stage_rates(db)
+    stage1 = next((r for r in rates if r.code == "COURT_STAGE_1_DEFENSE"), None)
+    assert stage1 is not None
+    assert getattr(stage1, "net_ils", None) is None
+    assert fee_stage_gross_ils(stage1) == Decimal("23600.00")
+    assert fee_stage_gross_ils(stage1) == stage1.amount_ils
+
+
+def test_legacy_code_vat_17_gross(db, case_with_rates):
+    """תיקים ישנים: net=15000 vat=0.17 → gross=17550.00."""
+    # Seed a legacy-style rate (migration may have already added it; if not we add here)
+    rate = db.query(FeeStageRate).filter(FeeStageRate.code == "LEGACY_COURT_STAGE_1_DEFENSE").first()
+    if rate is None:
+        r = FeeStageRate(
+            code="LEGACY_COURT_STAGE_1_DEFENSE",
+            amount_ils=Decimal("17550.00"),
+            is_active=True,
+            net_ils=Decimal("15000.00"),
+            vat_pct=Decimal("0.17"),
+        )
+        db.add(r)
+        db.commit()
+        db.refresh(r)
+        rate = r
+    assert rate is not None
+    assert rate.net_ils == Decimal("15000.00")
+    assert rate.vat_pct == Decimal("0.17")
+    assert fee_stage_gross_ils(rate) == Decimal("17550.00")
 
 
 def test_get_billed_codes_empty(db, case_with_rates):

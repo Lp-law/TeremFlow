@@ -15,6 +15,7 @@ from app.schemas.case import (
     CaseBulkUpdateResponse,
     CaseCreate,
     CaseDeleteRequest,
+    CaseNotesUpdate,
     CaseOut,
     CaseUpdateStatus,
     ManualOverridesUpdate,
@@ -122,6 +123,19 @@ def bulk_update_cases(
 def update_case_status(case_id: int, payload: CaseUpdateStatus, db: Session = Depends(get_db), _=Depends(require_auth)):
     c = case_service.update_case_status(db, case_id=case_id, status_value=payload.status)
     return CaseOut(**case_service.to_case_out(db, c))
+
+
+@router.patch("/{case_id}/notes", response_model=CaseOut)
+def update_case_notes_route(
+    case_id: int,
+    payload: CaseNotesUpdate,
+    db: Session = Depends(get_db),
+    _=Depends(require_auth),
+):
+    """Update case notes (free text). Send case_notes (string or null) to set; omit to leave unchanged."""
+    c = case_service.update_case_notes(db, case_id=case_id, case_notes=payload.case_notes)
+    stages = case_service.get_latest_fee_stage_by_case_ids(db, [c.id])
+    return CaseOut(**case_service.to_case_out(db, c, current_procedure_stage=stages.get(c.id)))
 
 
 @router.patch("/{case_id}/overrides", response_model=CaseOut)
