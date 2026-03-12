@@ -9,7 +9,7 @@ from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from app.api.router import api_router
-from app.api.routes.version import set_build_time_utc
+from app.api.routes.version import set_build_time_utc, router as version_router
 from app.core.config import settings
 from app.core.security import constant_time_equals
 from app.db.init_db import ensure_seeded
@@ -69,6 +69,9 @@ def create_app() -> FastAPI:
     @app.get("/health")
     def health():
         return {"status": "ok"}
+
+    # Version fingerprint on app root so it is never 404 (no dependency on api_router prefix).
+    app.include_router(version_router, tags=["version"])
 
     _CSRF_EXEMPT_PATHS = frozenset({"/auth/login", "/auth/logout", "/import/excel", "/admin/wipe-case-data"})
 
