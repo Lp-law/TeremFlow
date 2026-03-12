@@ -2022,17 +2022,15 @@ function RetainerPanel({
 
   const cfg = ledger?.config
   const monthlyDisplay = cfg ? `${formatILS(cfg.monthly_base_net_ils)} + מע״מ ${cfg.vat_pct} = ${formatILS(cfg.monthly_gross_ils)}` : '—'
-  const chargedMonthsFromRows = ledger?.rows ? new Set(ledger.rows.map((r: { month: string }) => r.month)).size : null
-  const chargedMonths = ledger != null
-    ? (ledger.charged_months_count ?? chargedMonthsFromRows ?? overview?.retainer?.charged_months_count ?? '—')
-    : (overview?.retainer?.charged_months_count ?? '—')
+  // When we have ledger rows, always compute from rows (source of truth), not from API
+  const hasRows = ledger?.rows && ledger.rows.length > 0
+  const chargedMonthsFromRows = hasRows ? new Set(ledger.rows!.map((r: { month: string }) => r.month)).size : null
+  const paidTotalFromRows = hasRows
+    ? ledger.rows!.reduce((sum: number, r: { paid_ils: string | number }) => sum + toNumber(r.paid_ils ?? 0), 0)
+    : null
+  const chargedMonths = hasRows ? chargedMonthsFromRows : (overview?.retainer?.charged_months_count ?? '—')
   const retainerCharged = overview ? toNumber(overview.retainer.retainer_charged_to_date_ils ?? 0) : null
-  const paidTotalFromRows = ledger?.rows
-    ? ledger.rows.reduce((sum: number, r: { paid_ils: string | number }) => sum + toNumber(r.paid_ils ?? 0), 0)
-    : null
-  const retainerPaidTotal = ledger != null
-    ? (ledger.retainer_paid_total_ils_gross != null ? toNumber(ledger.retainer_paid_total_ils_gross) : paidTotalFromRows)
-    : null
+  const retainerPaidTotal = hasRows ? paidTotalFromRows : (ledger != null && ledger.retainer_paid_total_ils_gross != null ? toNumber(ledger.retainer_paid_total_ils_gross) : null)
   const rowOrder = (type: string) => (type === 'snapshot' ? 0 : type === 'payment' ? 1 : 2)
   const sortedRows = ledger?.rows
     ? [...ledger.rows].sort((a, b) => {
@@ -2048,7 +2046,7 @@ function RetainerPanel({
       {/* סה״כ חודשי חיוב (מהפנקס כולל ידני), סה״כ ששולם (כולל ידני), תיאורטי */}
       <div className="card-soft p-4">
         <div className="text-sm text-muted">סה״כ חודשי חיוב: <span className="font-semibold text-foreground">{chargedMonths}</span></div>
-        {(retainerPaidTotal != null || paidTotalFromRows != null) ? (
+        {(retainerPaidTotal != null || (hasRows && paidTotalFromRows != null)) ? (
           <div className="text-sm text-muted mt-1">סה״כ הריטיינר ששולם (כולל ידני): <span className="font-semibold text-foreground">{formatILS(retainerPaidTotal ?? paidTotalFromRows ?? 0)}</span></div>
         ) : null}
         <div className="text-xs text-muted mt-1">שכ״ט ששולם עד כה (תיאורטי): {retainerCharged != null ? formatILS(retainerCharged) : '—'}</div>
@@ -2164,7 +2162,7 @@ function RetainerPanel({
           <div>
             <div className="font-semibold">פנקס ריטיינר חודשי</div>
             <div className="text-sm text-muted mt-1">סה״כ חודשי חיוב: {chargedMonths} — נצבר, שולם ויתרת קרדיט לפי חודש</div>
-            {ledger && (retainerPaidTotal != null || paidTotalFromRows != null) ? (
+            {ledger && (retainerPaidTotal != null || (hasRows && paidTotalFromRows != null)) ? (
               <div className="text-sm mt-1">סה״כ הריטיינר ששולם (כולל ידני): <span className="font-semibold text-foreground">{formatILS(retainerPaidTotal ?? paidTotalFromRows ?? 0)}</span></div>
             ) : null}
           </div>
