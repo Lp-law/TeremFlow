@@ -1,6 +1,7 @@
 import { Suspense, lazy } from 'react'
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { AuthProvider, RequireAuth, useAuth } from './auth/AuthContext'
+import { BackToCasesButton } from './components/BackToCasesButton'
 import { BuildFingerprint } from './components/BuildFingerprint'
 
 const LoginPage = lazy(() => import('./pages/LoginPage').then((m) => ({ default: m.LoginPage })))
@@ -19,9 +20,13 @@ function HomeRedirect() {
 
 function AppContent() {
   const { user } = useAuth()
+  const location = useLocation()
+  const pathname = location.pathname
+  const showBackToCases = pathname !== '/dashboard' && pathname !== '/cases'
   return (
     <div className="min-h-screen flex flex-col">
       <main className="flex-1">
+        {user && showBackToCases ? <BackToCasesButton /> : null}
         <Suspense fallback={<div className="min-h-screen w-full px-6 py-10 text-right text-sm text-muted">טוען...</div>}>
           <Routes>
             <Route path="/" element={<HomeRedirect />} />

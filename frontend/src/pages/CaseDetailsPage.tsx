@@ -326,7 +326,7 @@ export function CaseDetailsPage() {
                   onOpenLegacyRange={() => setActiveModal('retainerLegacyRange')}
                   retainerReloadKey={retainerReloadKey}
                   onRetainerChange={() => setRefreshOverviewDeductibleKey((k) => k + 1)}
-                  onCaseUpdated={load}
+                  onCaseUpdated={(updated) => { if (updated != null) setCaseItem(updated); else load(); }}
                   onToast={(msg) => {
                     setToast(msg)
                     setTimeout(() => setToast(null), 4000)
@@ -1934,7 +1934,7 @@ function RetainerPanel({
   onOpenLegacyRange?: () => void
   retainerReloadKey: number
   onRetainerChange?: () => void
-  onCaseUpdated?: () => void | Promise<void>
+  onCaseUpdated?: (updated?: CaseOut) => void | Promise<void>
   onToast?: (msg: string) => void
 }) {
   const [ledger, setLedger] = useState<RetainerLedger | null>(null)
@@ -1997,11 +1997,11 @@ function RetainerPanel({
       if (anchorDate) body.retainer_anchor_date = anchorDate
       if (snapshotMonth) body.retainer_snapshot_through_month = `${snapshotMonth}-01`
       body.retainer_end_date = retainerEndDate || null
-      await apiFetch(`/cases/${caseId}/retainer/dates`, { method: 'PATCH', body: JSON.stringify(body) })
-      await onCaseUpdated?.()
+      const updated = await apiFetch<CaseOut>(`/cases/${caseId}/retainer/dates`, { method: 'PATCH', body: JSON.stringify(body) })
+      await onCaseUpdated?.(updated)
       onRetainerChange?.()
       await load()
-      onToast?.('נשמר')
+      onToast?.('תאריכים נשמרו')
     } catch (e: any) {
       setDatesSaveError(e?.message || 'שגיאה בשמירה')
     } finally {
@@ -2041,15 +2041,8 @@ function RetainerPanel({
   const retainerPaidTotal = ledger != null && ledger.retainer_paid_total_ils_gross != null ? toNumber(ledger.retainer_paid_total_ils_gross) : (hasRows ? paidTotalFromRows : null)
   const ledgerAccruedTotal = ledger?.total_accrued_ils != null ? toNumber(ledger.total_accrued_ils) : null
   const ledgerCredit = ledger?.current_credit_ils != null ? toNumber(ledger.current_credit_ils) : null
-  const rowOrder = (type: string) => (type === 'snapshot' ? 0 : type === 'accrual' ? 1 : 2)
   const sortedRows = hasRows
-    ? [...rowsArray].sort((a, b) => {
-        const ma = String((a as { month?: string }).month ?? '')
-        const mb = String((b as { month?: string }).month ?? '')
-        const cmp = ma.localeCompare(mb)
-        if (cmp !== 0) return cmp
-        return rowOrder((a as { row_type?: string }).row_type || '') - rowOrder((b as { row_type?: string }).row_type || '')
-      })
+    ? [...rowsArray].sort((a, b) => String((a as { month?: string }).month ?? '').localeCompare(String((b as { month?: string }).month ?? '')))
     : []
 
   return (
@@ -2167,7 +2160,7 @@ function RetainerPanel({
       </div>
 
       {/* Explanation */}
-      <div className="card-soft p-4 bg-muted/20">
+      <div className="card-soft p-4">
         <p className="text-sm text-muted leading-relaxed">
           <strong>הסבר:</strong> עוגן הריטיינר ו־Snapshot עד חודש קובעים מאיזה חודש מחושבים חודשי החיוב. כשמוקפא — החיוב לא מתקדם. לשונית זו מציגה רק את ריטיינר השכר החודשי — לא הוצאות.
         </p>
@@ -2189,7 +2182,7 @@ function RetainerPanel({
             </button>
             {isAdmin && onOpenLegacyRange ? (
               <button type="button" onClick={onOpenLegacyRange} className="btn btn-secondary">
-                הוסף ריטיינר לגאסי (טווח)
+                הוסף ריטיינר עבר (LEGACY) בטווח
               </button>
             ) : null}
           </div>
@@ -2208,16 +2201,10 @@ function RetainerPanel({
               </thead>
               <tbody>
                 {sortedRows.map((row, idx) => {
-                  const isSnapshot = row.row_type === 'snapshot'
-                  const isPayment = row.row_type === 'payment'
-                  const monthLabel = isPayment ? `${row.month} · תשלום` : row.month
                   const notesDisplay = row.notes ?? '—'
                   return (
-                    <tr
-                      key={`${row.row_type}-${row.month}-${idx}`}
-                      className={`border-b border-border/30 ${isSnapshot ? 'bg-muted/20' : ''} ${isPayment ? 'bg-surface/20' : ''} hover:bg-surface/30`}
-                    >
-                      <td className={`py-3 ${isPayment ? 'pr-6 text-muted' : ''}`}>{monthLabel}</td>
+                    <tr key={`${row.month}-${idx}`} className="border-b border-border/30">
+                      <td className="py-3">{row.month}</td>
                       <td className="py-3">{formatILS(row.accrued_ils)}</td>
                       <td className="py-3">{formatILS(row.paid_ils)}</td>
                       <td className="py-3">{formatILS(row.running_credit_ils)}</td>
@@ -2303,7 +2290,7 @@ function LegacyRetainerRangeModal({
       <div className="modal-overlay" onClick={onClose} />
       <div className="modal-panel max-w-md">
         <div className="text-right">
-          <div className="text-lg font-semibold">הוסף ריטיינר לגאסי (טווח)</div>
+          <div className="text-lg font-semibold">הוסף ריטיינר עבר (LEGACY) בטווח</div>
           <div className="text-sm text-muted mt-1">נוצרות תשלומים אוטומטיים — חודש אחד לכל חודש בטווח.</div>
         </div>
         <div className="mt-4 space-y-3">

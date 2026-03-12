@@ -281,8 +281,31 @@ def retainer_summary(db: Session, *, case_id: int) -> dict[str, Decimal]:
     }
 
 
+def _aggregate_payments_by_month(payments: list) -> dict[str, tuple[Decimal, str | None]]:
+    """Group payments by YYYY-MM; value = (sum paid_ils, optional notes e.g. '2 תשלומים')."""
+    by_month: dict[str, list[tuple[Decimal, str | None]]] = {}
+    for p in payments:
+        month_str = p.payment_date.strftime("%Y-%m")
+        amt = q_ils(Decimal(str(p.amount_ils_gross)))
+        note = (p.note or "").strip() or None
+        if month_str not in by_month:
+            by_month[month_str] = []
+        by_month[month_str].append((amt, note))
+    out = {}
+    for month_str, items in by_month.items():
+        total = q_ils(sum(a for a, _ in items))
+        notes_parts = []
+        if len(items) > 1:
+            notes_parts.append(f"{len(items)} תשלומים")
+        first_note = next((n for _, n in items if n), None)
+        if first_note:
+            notes_parts.append(first_note)
+        out[month_str] = (total, notes_parts[0] if len(notes_parts) == 1 else ("; ".join(notes_parts) if notes_parts else None))
+    return out
+
+
 def _ledger_payments_only(db: Session, *, case_id: int) -> dict:
-    """Minimal ledger when case has no retainer_anchor_date: payment rows only, so frontend can show counts and total paid."""
+    """Minimal ledger when case has no retainer_anchor_date: one row per month (payments aggregated)."""
     case = db.query(Case).filter(Case.id == case_id).first()
     if not case:
         return None
@@ -302,21 +325,22 @@ def _ledger_payments_only(db: Session, *, case_id: int) -> dict:
         .order_by(RetainerPayment.payment_date.asc(), RetainerPayment.id.asc())
         .all()
     )
+    paid_by_month = _aggregate_payments_by_month(payments)
+    months_sorted = sorted(paid_by_month.keys())
     rows = []
     running = Decimal("0.00")
-    for p in payments:
-        amt = q_ils(Decimal(str(p.amount_ils_gross)))
-        note_val = (p.note or "").strip() or None
-        running = q_ils(running + amt)
+    for month_str in months_sorted:
+        paid_ils, notes = paid_by_month[month_str]
+        running = q_ils(running + paid_ils)
         rows.append({
-            "month": p.payment_date.strftime("%Y-%m"),
+            "month": month_str,
             "accrued_ils": Decimal("0"),
-            "paid_ils": amt,
+            "paid_ils": paid_ils,
             "running_credit_ils": running,
-            "row_type": "payment",
-            "notes": note_val,
+            "row_type": "accrual",
+            "notes": notes,
         })
-    charged_months_count = len({r["month"] for r in rows})
+    charged_months_count = len(months_sorted)
     return {
         "config": config,
         "anchor_date": anchor.isoformat(),
@@ -376,57 +400,38 @@ def build_retainer_ledger(db: Session, *, case_id: int) -> dict:
         .all()
     )
 
-    # Sort by month (YYYY-MM) ascending, then within same month: snapshot → accrual → payment, then by date for stability.
-    def row_sort_key(item):
-        d, row_type, row_dict = item
-        month_str = row_dict.get("month") or d.strftime("%Y-%m")
-        order = 0 if row_type == "snapshot" else (1 if row_type == "accrual" else 2)
-        return (month_str, order, d)
-
-    merged: list[tuple[dt.date, str, dict]] = []
-    if snapshot_paid > 0 and snapshot_through is not None:
-        merged.append((snapshot_through, "snapshot", {
-            "month": snapshot_through.strftime("%Y-%m"),
-            "accrued_ils": Decimal("0"),
-            "paid_ils": snapshot_paid,
-            "row_type": "snapshot",
-            "notes": "from snapshot",
-        }))
+    # One row per month (YYYY-MM): accrued_ils from accruals, paid_ils = sum of payments in that month.
+    accrual_by_month: dict[str, Decimal] = {}
     for a in accruals:
-        amt = q_ils(Decimal(str(a.amount_ils_gross)))
-        paid = amt if a.is_paid else Decimal("0")
-        merged.append((a.accrual_month, "accrual", {
-            "month": a.accrual_month.strftime("%Y-%m"),
-            "accrued_ils": amt,
-            "paid_ils": paid,
-            "row_type": "accrual",
-            "notes": None,
-        }))
-    for p in payments:
-        amt = q_ils(Decimal(str(p.amount_ils_gross)))
-        note_val = (p.note or "").strip() or None
-        merged.append((p.payment_date, "payment", {
-            "month": p.payment_date.strftime("%Y-%m"),
-            "accrued_ils": Decimal("0"),
-            "paid_ils": amt,
-            "row_type": "payment",
-            "notes": note_val,
-        }))
+        month_str = a.accrual_month.strftime("%Y-%m")
+        accrual_by_month[month_str] = q_ils(Decimal(str(a.amount_ils_gross)))
+    paid_by_month = _aggregate_payments_by_month(payments)
+    all_months = sorted(set(accrual_by_month.keys()) | set(paid_by_month.keys()))
+    if snapshot_paid > 0 and snapshot_through is not None:
+        snap_month = snapshot_through.strftime("%Y-%m")
+        if snap_month not in all_months:
+            all_months = sorted(set(all_months) | {snap_month})
 
-    merged.sort(key=row_sort_key)
-
-    rows: list[dict] = []
+    rows = []
     running = Decimal("0.00")
-    for _d, _t, row_dict in merged:
-        r_type = row_dict["row_type"]
-        if r_type == "accrual":
-            running = q_ils(running + row_dict["paid_ils"] - row_dict["accrued_ils"])
-        else:
-            running = q_ils(running + row_dict["paid_ils"])
-        row_dict["running_credit_ils"] = running
-        rows.append(row_dict)
+    for month_str in all_months:
+        accrued = accrual_by_month.get(month_str, Decimal("0"))
+        paid_total, notes = paid_by_month.get(month_str, (Decimal("0"), None))
+        if snapshot_paid > 0 and snapshot_through is not None and snapshot_through.strftime("%Y-%m") == month_str:
+            paid_total = q_ils(paid_total + snapshot_paid)
+            notes = "from snapshot" if not notes else f"{notes}; from snapshot"
+        running = q_ils(running + paid_total - accrued)
+        row_type = "snapshot" if (snapshot_paid > 0 and snapshot_through and snapshot_through.strftime("%Y-%m") == month_str) else "accrual"
+        rows.append({
+            "month": month_str,
+            "accrued_ils": accrued,
+            "paid_ils": paid_total,
+            "running_credit_ils": running,
+            "row_type": row_type,
+            "notes": notes,
+        })
 
-    charged_months_count = len({r["month"] for r in rows})
+    charged_months_count = len(all_months)
     total_paid_ils = summary["retainer_paid_total_ils_gross"]
     total_accrued_ils = q_ils(sum(r["accrued_ils"] for r in rows))
 

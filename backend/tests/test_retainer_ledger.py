@@ -36,7 +36,7 @@ def _minimal_case(db: Session, **kwargs) -> Case:
 
 
 def test_retainer_ledger_includes_manual_payments_and_totals(db: Session):
-    """Ledger includes manual retainer_payments in rows and in retainer_paid_total_ils_gross."""
+    """Ledger has one row per month; payments in same month are aggregated into that month's paid_ils."""
     c = _minimal_case(db)
     db.add(
         RetainerPayment(
@@ -59,11 +59,14 @@ def test_retainer_ledger_includes_manual_payments_and_totals(db: Session):
     data = build_retainer_ledger(db, case_id=c.id)
     assert data is not None
     assert "rows" in data
-    payment_rows = [r for r in data["rows"] if r["row_type"] == "payment"]
-    assert len(payment_rows) == 2
+    months = [r["month"] for r in data["rows"]]
+    assert len(months) == len(set(months)), "unique months only"
+    march_rows = [r for r in data["rows"] if r["month"] == "2024-03"]
+    april_rows = [r for r in data["rows"] if r["month"] == "2024-04"]
+    assert len(march_rows) == 1 and march_rows[0]["paid_ils"] == Decimal("1105.65")
+    assert len(april_rows) == 1 and april_rows[0]["paid_ils"] == Decimal("1115.10")
     assert data["retainer_paid_total_ils_gross"] == Decimal("2220.75")
     assert "total_accrued_ils" in data
-    assert all(r["paid_ils"] > 0 for r in payment_rows)
 
 
 def test_retainer_end_date_persists_and_caps_effective_end(db: Session):
@@ -89,3 +92,24 @@ def test_charged_months_count_anchor_jan_end_june_six_months(db: Session):
     db.refresh(c)
     setattr(c, "retainer_end_date", dt.date(2024, 6, 30))
     assert charged_months_count(c) == 6
+
+
+def test_charged_months_anchor_jan_end_feb_two_months(db: Session):
+    """anchor=2024-01-01, end=2024-02-01 => 2 months (Jan, Feb)."""
+    c = _minimal_case(db, retainer_anchor_date=dt.date(2024, 1, 1))
+    db.refresh(c)
+    setattr(c, "retainer_end_date", dt.date(2024, 2, 1))
+    assert charged_months_count(c) == 2
+
+
+def test_ledger_february_payments_in_feb_paid_ils(db: Session):
+    """Payments in February aggregate into February row only; no duplicate month row."""
+    c = _minimal_case(db)
+    db.add(RetainerPayment(case_id=c.id, payment_date=dt.date(2026, 2, 1), amount_ils_gross=Decimal("500"), note=None))
+    db.add(RetainerPayment(case_id=c.id, payment_date=dt.date(2026, 2, 15), amount_ils_gross=Decimal("300"), note=None))
+    db.commit()
+    data = build_retainer_ledger(db, case_id=c.id)
+    assert data is not None
+    feb_rows = [r for r in data["rows"] if r["month"] == "2026-02"]
+    assert len(feb_rows) == 1
+    assert feb_rows[0]["paid_ils"] == Decimal("800.00")
