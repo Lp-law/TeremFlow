@@ -2147,7 +2147,10 @@ function RetainerPanel({
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
             <div className="font-semibold">פנקס ריטיינר חודשי</div>
-            <div className="text-sm text-muted mt-1">סה״כ חודשי חיוב: {chargedMonths} (כולל ידני) — נצבר, שולם ויתרת קרדיט לפי חודש</div>
+            <div className="text-sm text-muted mt-1">סה״כ חודשי חיוב: {chargedMonths} — נצבר, שולם ויתרת קרדיט לפי חודש</div>
+            {ledger && retainerPaidTotal != null ? (
+              <div className="text-sm mt-1">סה״כ הריטיינר ששולם (כולל ידני): <span className="font-semibold text-foreground">{formatILS(retainerPaidTotal)}</span></div>
+            ) : null}
           </div>
           <button type="button" onClick={onOpenAddPayment} className="btn btn-primary">
             הוסף תשלום ריטיינר

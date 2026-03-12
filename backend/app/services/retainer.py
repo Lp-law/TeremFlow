@@ -288,10 +288,11 @@ def build_retainer_ledger(db: Session, *, case_id: int) -> dict:
         .all()
     )
 
-    # Build merged list (snapshot + accruals + payments) then sort chronologically by (date, type).
+    # Build merged list (snapshot + accruals + payments) then sort chronologically by date;
+    # within same date: snapshot first, then payment, then accrual (so "תשלום" appears before the month charge).
     def row_sort_key(item):
         d, row_type, _ = item
-        order = 0 if row_type == "snapshot" else (1 if row_type == "accrual" else 2)
+        order = 0 if row_type == "snapshot" else (1 if row_type == "payment" else 2)
         return (d, order)
 
     merged: list[tuple[dt.date, str, dict]] = []
@@ -337,7 +338,7 @@ def build_retainer_ledger(db: Session, *, case_id: int) -> dict:
         row_dict["running_credit_ils"] = running
         rows.append(row_dict)
 
-    charged_months_count = sum(1 for r in rows if r.get("row_type") == "accrual")
+    charged_months_count = len({r["month"] for r in rows})
 
     return {
         "config": config,
