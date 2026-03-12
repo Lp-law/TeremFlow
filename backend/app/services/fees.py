@@ -145,11 +145,11 @@ def soft_delete_fee_event(db: Session, *, case_id: int, event_id: int, user_id: 
 
 
 def fee_stage_gross_ils(rate: FeeStageRate) -> Decimal:
-    """Compute gross ILS for a rate: if net_ils set then gross = round(net_ils * (1+vat_pct), 2); else amount_ils."""
+    """Compute gross ILS for a rate: if net_ils and vat_pct set then gross = (net_ils * (1+vat_pct)) quantized; else amount_ils."""
     net = getattr(rate, "net_ils", None)
-    if net is not None and getattr(rate, "vat_pct", None) is not None:
-        vat = Decimal(str(rate.vat_pct))
-        return q_ils(round(Decimal(str(net)) * (1 + vat), 2))
+    vat = getattr(rate, "vat_pct", None)
+    if net is not None and vat is not None:
+        return q_ils(Decimal(str(net)) * (1 + Decimal(str(vat))))
     return q_ils(Decimal(str(rate.amount_ils)))
 
 
@@ -163,10 +163,15 @@ ALLOWED_VAT_PCT = (Decimal("0.17"), Decimal("0.18"))
 def update_fee_stage_rate_vat(
     db: Session, *, code: str, vat_pct: Decimal | None = None, net_ils: Decimal | None = None
 ) -> FeeStageRate:
-    """Admin: set vat_pct (0.17 or 0.18) and optionally net_ils. If rate had only amount_ils, derive net from 18% then apply new vat."""
+    """Admin: set vat_pct (0.17 or 0.18) and optionally net_ils. When setting net_ils, vat_pct must be set (on rate or in request)."""
     rate = db.query(FeeStageRate).filter(FeeStageRate.code == code).first()
     if not rate:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rate not found")
+    if net_ils is not None and getattr(rate, "vat_pct", None) is None and vat_pct is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="When setting net_ils, vat_pct must also be provided (0.17 or 0.18)",
+        )
     if vat_pct is not None:
         v = q_ils(vat_pct)
         if v not in ALLOWED_VAT_PCT:

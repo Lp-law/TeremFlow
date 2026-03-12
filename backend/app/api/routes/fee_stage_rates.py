@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -45,6 +45,8 @@ def update_fee_stage_rate(
 ):
     """Admin: set vat_pct (0.17 or 0.18) and optionally net_ils for a rate."""
     body = payload.model_dump(exclude_unset=True)
+    if not body:
+        raise HTTPException(status_code=400, detail="Provide at least one of vat_pct, net_ils")
     vat_pct = body.get("vat_pct")
     net_ils = body.get("net_ils")
     rate = fee_service.update_fee_stage_rate_vat(

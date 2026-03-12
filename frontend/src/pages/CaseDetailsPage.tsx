@@ -183,9 +183,19 @@ export function CaseDetailsPage() {
     }
   }
 
+  const invalidCaseId = !Number.isFinite(id)
+
   return (
     <div className="min-h-screen w-full px-6 py-10">
       <div className="mx-auto w-full max-w-6xl">
+        {invalidCaseId ? (
+          <div className="text-right py-8">
+            <div className="text-xl font-semibold text-amber-600 dark:text-amber-400">תיק לא נמצא</div>
+            <p className="text-muted mt-2">מזהה התיק חסר או לא תקין.</p>
+            <BackButton />
+          </div>
+        ) : (
+        <>
         <div className="flex items-center justify-between gap-4">
           <div className="text-right">
             <div className="text-2xl font-bold">
@@ -387,6 +397,9 @@ export function CaseDetailsPage() {
           onToast={(msg) => setToast(msg)}
         />
       ) : null}
+        </>
+        )}
+      </div>
     </div>
   )
 }

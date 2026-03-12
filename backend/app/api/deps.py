@@ -17,7 +17,14 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
         payload = decode_access_token(token)
     except Exception:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session")
-    user = db.query(User).filter(User.id == int(payload.sub)).first()
+    sub = getattr(payload, "sub", None)
+    if sub is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session")
+    try:
+        user_id = int(sub)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session")
+    user = db.query(User).filter(User.id == user_id).first()
     if not user or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
     return user
@@ -47,7 +54,14 @@ def get_optional_user(request: Request, db: Session = Depends(get_db)) -> User |
         payload = decode_access_token(token)
     except Exception:
         return None
-    user = db.query(User).filter(User.id == int(payload.sub)).first()
+    sub = getattr(payload, "sub", None)
+    if sub is None:
+        return None
+    try:
+        user_id = int(sub)
+    except (TypeError, ValueError):
+        return None
+    user = db.query(User).filter(User.id == user_id).first()
     if not user or not user.is_active:
         return None
     return user

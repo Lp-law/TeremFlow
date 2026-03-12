@@ -81,10 +81,14 @@ export async function apiDownload(
   })
 
   if (!res.ok) {
-    let detail = 'שגיאה'
+    let detail: string = 'שגיאה'
     try {
       const data = await res.json()
-      detail = data?.detail || detail
+      if (Array.isArray(data?.detail)) {
+        detail = data.detail.map((d: any) => d?.msg ?? JSON.stringify(d)).join('; ')
+      } else {
+        detail = (data?.detail != null ? String(data.detail) : detail) as string
+      }
     } catch {
       // ignore
     }

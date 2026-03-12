@@ -253,8 +253,10 @@ def build_retainer_ledger(db: Session, *, case_id: int) -> dict:
     case = db.query(Case).filter(Case.id == case_id).first()
     if not case or getattr(case, "deleted_at", None) is not None:
         return None
+    anchor = getattr(case, "retainer_anchor_date", None)
+    if anchor is None:
+        return None
     effective_end = get_effective_end_date(case)
-    anchor = case.retainer_anchor_date
     snapshot_through = case.retainer_snapshot_through_month if case.retainer_snapshot_ils_gross else None
     snapshot_paid = q_ils(Decimal(str(case.retainer_snapshot_ils_gross or 0)))
     ensure_accruals_up_to(

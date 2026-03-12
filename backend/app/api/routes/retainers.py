@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_auth
@@ -21,6 +21,14 @@ from app.services import fees as fee_service
 from app.services import retainer as retainer_service
 
 router = APIRouter()
+
+
+def _get_case_or_404(db: Session, case_id: int):
+    c = case_service.get_case_if_not_deleted(db, case_id)
+    if not c:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+    return c
+
 
 def _accrual_out(a: RetainerAccrual) -> RetainerAccrualOut:
     return RetainerAccrualOut(
@@ -44,6 +52,7 @@ def _payment_out(p: RetainerPayment) -> RetainerPaymentOut:
 
 @router.get("/accruals", response_model=list[RetainerAccrualOut])
 def list_accruals(case_id: int, db: Session = Depends(get_db), _=Depends(require_auth)):
+    _get_case_or_404(db, case_id)
     items = (
         db.query(RetainerAccrual)
         .filter(RetainerAccrual.case_id == case_id)
@@ -55,6 +64,7 @@ def list_accruals(case_id: int, db: Session = Depends(get_db), _=Depends(require
 
 @router.get("/payments", response_model=list[RetainerPaymentOut])
 def list_payments(case_id: int, db: Session = Depends(get_db), _=Depends(require_auth)):
+    _get_case_or_404(db, case_id)
     items = (
         db.query(RetainerPayment)
         .filter(RetainerPayment.case_id == case_id)
@@ -68,6 +78,7 @@ def list_payments(case_id: int, db: Session = Depends(get_db), _=Depends(require
 def add_payment(
     case_id: int, payload: RetainerPaymentCreate, db: Session = Depends(get_db), user=Depends(require_auth)
 ):
+    _get_case_or_404(db, case_id)
     p = RetainerPayment(
         case_id=case_id,
         payment_date=payload.payment_date,
@@ -95,6 +106,7 @@ def add_payment(
 
 @router.get("/summary", response_model=RetainerSummary)
 def summary(case_id: int, db: Session = Depends(get_db), _=Depends(require_auth)):
+    _get_case_or_404(db, case_id)
     s = retainer_service.retainer_summary(db, case_id=case_id)
     return RetainerSummary(**s)
 
@@ -103,8 +115,7 @@ def summary(case_id: int, db: Session = Depends(get_db), _=Depends(require_auth)
 def ledger(case_id: int, db: Session = Depends(get_db), _=Depends(require_auth)):
     data = retainer_service.build_retainer_ledger(db, case_id=case_id)
     if data is None:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=404, detail="Case not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
     return RetainerLedgerOut(**data)
 
 
