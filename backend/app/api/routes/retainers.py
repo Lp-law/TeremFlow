@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_auth
+from app.api.deps import require_admin, require_auth
 from app.db.session import get_db
 from app.models.retainer import RetainerAccrual, RetainerPayment
 from app.schemas.retainer import (
@@ -11,6 +11,7 @@ from app.schemas.retainer import (
     RetainerDatesUpdate,
     RetainerFreezeRequest,
     RetainerLedgerOut,
+    RetainerLegacyRangeCreate,
     RetainerPaymentCreate,
     RetainerPaymentOut,
     RetainerSummary,
@@ -72,6 +73,33 @@ def list_payments(case_id: int, db: Session = Depends(get_db), _=Depends(require
         .all()
     )
     return [_payment_out(p) for p in items]
+
+
+@router.post("/legacy-range", response_model=list[RetainerPaymentOut])
+def create_legacy_range(
+    case_id: int,
+    payload: RetainerLegacyRangeCreate,
+    db: Session = Depends(get_db),
+    user=Depends(require_admin),
+):
+    """Create N retainer_payments (one per month in range). Admin-only."""
+    _get_case_or_404(db, case_id)
+    created = retainer_service.create_legacy_range_payments(
+        db,
+        case_id=case_id,
+        start_date=payload.start_date,
+        end_date=payload.end_date,
+        monthly_amount_ils_gross=payload.monthly_amount_ils_gross,
+        note=payload.note,
+    )
+    fee_service.apply_retainer_credit(db, case_id=case_id)
+    items = (
+        db.query(RetainerPayment)
+        .filter(RetainerPayment.case_id == case_id)
+        .order_by(RetainerPayment.payment_date.desc(), RetainerPayment.id.desc())
+        .all()
+    )
+    return [_payment_out(x) for x in items]
 
 
 @router.post("/payments", response_model=list[RetainerPaymentOut])

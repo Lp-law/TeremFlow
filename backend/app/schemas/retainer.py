@@ -32,6 +32,14 @@ class RetainerPaymentCreate(BaseModel):
     note: str | None = None
 
 
+class RetainerLegacyRangeCreate(BaseModel):
+    """Create N retainer_payments (one per month in range). Admin/import use."""
+    start_date: dt.date
+    end_date: dt.date
+    monthly_amount_ils_gross: Decimal = Field(gt=0)
+    note: str | None = None
+
+
 class RetainerPaymentOut(BaseModel):
     id: int
     payment_date: dt.date

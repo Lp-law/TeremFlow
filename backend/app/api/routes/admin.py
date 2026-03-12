@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.responses import Response
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_admin, require_auth
@@ -13,8 +14,35 @@ from app.db.session import get_db
 from app.models.case import Case
 from app.models.notification import AlertEvent, Notification
 from app.models.user import User
+from app.schemas.case import CaseOut
+from app.services import cases as case_service
 
 router = APIRouter()
+
+
+class CaseIdentityUpdate(BaseModel):
+    """Admin-only: update case_reference and/or case_name."""
+    case_reference: str | None = None
+    case_name: str | None = None
+
+
+@router.patch("/cases/{case_id}/identity", response_model=CaseOut)
+def update_case_identity(
+    case_id: int,
+    payload: CaseIdentityUpdate,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
+    """Update case_reference and/or case_name. Prevents duplicate case_reference."""
+    updates = payload.model_dump(exclude_unset=True)
+    c = case_service.update_case_identity(
+        db,
+        case_id=case_id,
+        case_reference=updates.get("case_reference"),
+        case_name=updates.get("case_name") if "case_name" in updates else None,
+    )
+    stages = case_service.get_latest_fee_stage_by_case_ids(db, [c.id])
+    return CaseOut(**case_service.to_case_out(db, c, current_procedure_stage=stages.get(c.id)))
 
 
 @router.post("/wipe-case-data")

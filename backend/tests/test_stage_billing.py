@@ -94,6 +94,34 @@ def test_legacy_code_vat_17_gross(db, case_with_rates):
     assert fee_stage_gross_ils(rate) == Decimal("17550.00")
 
 
+def test_fee_stage_rates_legacy_swap_evidence_proofs(db, case_with_rates):
+    """After fix: ראיות 5000+17%=5850, הוכחות 10000+17%=11700."""
+    for code, expected_net, expected_gross in [
+        ("LEGACY_COURT_STAGE_3_EVIDENCE", Decimal("5000.00"), Decimal("5850.00")),
+        ("LEGACY_COURT_STAGE_4_PROOFS", Decimal("10000.00"), Decimal("11700.00")),
+    ]:
+        rate = db.query(FeeStageRate).filter(FeeStageRate.code == code).first()
+        if rate is None:
+            r = FeeStageRate(
+                code=code,
+                amount_ils=expected_gross,
+                is_active=True,
+                net_ils=expected_net,
+                vat_pct=Decimal("0.17"),
+            )
+            db.add(r)
+            db.commit()
+            db.refresh(r)
+            rate = r
+        else:
+            rate.net_ils = expected_net
+            rate.vat_pct = Decimal("0.17")
+            rate.amount_ils = expected_gross
+            db.commit()
+            db.refresh(rate)
+        assert fee_stage_gross_ils(rate) == expected_gross
+
+
 def test_get_billed_codes_empty(db, case_with_rates):
     codes = get_billed_codes_for_case(db, case_with_rates.id)
     assert codes == []

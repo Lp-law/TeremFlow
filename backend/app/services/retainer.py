@@ -208,6 +208,44 @@ def allocate_payments_to_accruals(db: Session, *, case_id: int) -> None:
     db.commit()
 
 
+def create_legacy_range_payments(
+    db: Session,
+    *,
+    case_id: int,
+    start_date: dt.date,
+    end_date: dt.date,
+    monthly_amount_ils_gross: Decimal,
+    note: str | None = None,
+) -> list[RetainerPayment]:
+    """
+    Create one RetainerPayment per month in [start_date, end_date] (inclusive by month).
+    payment_date = first day of each month. note prefixed with "LEGACY: ".
+    """
+    start = _month_start(start_date)
+    end = _month_start(end_date)
+    if start > end:
+        return []
+    amount = q_ils(monthly_amount_ils_gross)
+    note_val = ("LEGACY: " + ((note or "").strip() or "")).strip() or "LEGACY"
+    created: list[RetainerPayment] = []
+    cur = start
+    while cur <= end:
+        p = RetainerPayment(
+            case_id=case_id,
+            payment_date=cur,
+            amount_ils_gross=amount,
+            note=note_val,
+        )
+        db.add(p)
+        created.append(p)
+        cur = add_months(cur, 1)
+    db.commit()
+    for p in created:
+        db.refresh(p)
+    allocate_payments_to_accruals(db, case_id=case_id)
+    return created
+
+
 def retainer_summary(db: Session, *, case_id: int) -> dict[str, Decimal]:
     accrued_total = (
         db.query(func.coalesce(func.sum(RetainerAccrual.amount_ils_gross), 0))
@@ -243,10 +281,59 @@ def retainer_summary(db: Session, *, case_id: int) -> dict[str, Decimal]:
     }
 
 
+def _ledger_payments_only(db: Session, *, case_id: int) -> dict:
+    """Minimal ledger when case has no retainer_anchor_date: payment rows only, so frontend can show counts and total paid."""
+    case = db.query(Case).filter(Case.id == case_id).first()
+    if not case:
+        return None
+    summary = retainer_summary(db, case_id=case_id)
+    today = dt.date.today()
+    rate = vat_rate_for_month(today)
+    vat_pct = "18%" if rate >= Decimal("0.18") else "17%"
+    config = {
+        "monthly_base_net_ils": RETAINER_BASE_NET_ILS,
+        "vat_pct": vat_pct,
+        "monthly_gross_ils": retainer_gross_for_month(today),
+    }
+    anchor = getattr(case, "open_date", None) or today
+    payments = (
+        db.query(RetainerPayment)
+        .filter(RetainerPayment.case_id == case_id)
+        .order_by(RetainerPayment.payment_date.asc(), RetainerPayment.id.asc())
+        .all()
+    )
+    rows = []
+    running = Decimal("0.00")
+    for p in payments:
+        amt = q_ils(Decimal(str(p.amount_ils_gross)))
+        note_val = (p.note or "").strip() or None
+        running = q_ils(running + amt)
+        rows.append({
+            "month": p.payment_date.strftime("%Y-%m"),
+            "accrued_ils": Decimal("0"),
+            "paid_ils": amt,
+            "running_credit_ils": running,
+            "row_type": "payment",
+            "notes": note_val,
+        })
+    charged_months_count = len({r["month"] for r in rows})
+    return {
+        "config": config,
+        "anchor_date": anchor.isoformat(),
+        "snapshot_through_month": None,
+        "snapshot_paid_ils": Decimal("0"),
+        "current_credit_ils": summary["retainer_credit_balance_ils_gross"],
+        "charged_months_count": charged_months_count,
+        "retainer_paid_total_ils_gross": summary["retainer_paid_total_ils_gross"],
+        "rows": rows,
+    }
+
+
 def build_retainer_ledger(db: Session, *, case_id: int) -> dict:
     """
     Build month-by-month ledger for display. Ensures accruals exist up to effective end (today or freeze date).
     Returns dict suitable for RetainerLedgerOut. Returns None if case not found or deleted.
+    When retainer_anchor_date is missing, returns a minimal ledger (payments only) so frontend can show counts.
     """
     from app.services.unified import get_effective_end_date
 
@@ -255,7 +342,7 @@ def build_retainer_ledger(db: Session, *, case_id: int) -> dict:
         return None
     anchor = getattr(case, "retainer_anchor_date", None)
     if anchor is None:
-        return None
+        return _ledger_payments_only(db, case_id=case_id)
     effective_end = get_effective_end_date(case)
     snapshot_through = case.retainer_snapshot_through_month if case.retainer_snapshot_ils_gross else None
     snapshot_paid = q_ils(Decimal(str(case.retainer_snapshot_ils_gross or 0)))
@@ -288,12 +375,12 @@ def build_retainer_ledger(db: Session, *, case_id: int) -> dict:
         .all()
     )
 
-    # Build merged list (snapshot + accruals + payments) then sort chronologically by date;
-    # within same date: snapshot first, then payment, then accrual (so "תשלום" appears before the month charge).
+    # Sort by month (YYYY-MM) ascending, then within same month: snapshot → payment → accrual, then by date/id for stability.
     def row_sort_key(item):
-        d, row_type, _ = item
+        d, row_type, row_dict = item
+        month_str = row_dict.get("month") or d.strftime("%Y-%m")
         order = 0 if row_type == "snapshot" else (1 if row_type == "payment" else 2)
-        return (d, order)
+        return (month_str, order, d)
 
     merged: list[tuple[dt.date, str, dict]] = []
     if snapshot_paid > 0 and snapshot_through is not None:

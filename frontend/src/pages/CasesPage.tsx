@@ -276,13 +276,6 @@ export function CasesPage() {
               >
                 תיק חדש
               </button>
-              <button
-                onClick={() => setShowBulkEditModal(true)}
-                className="btn btn-secondary h-12"
-                disabled={selectedIds.size === 0}
-              >
-                עריכה מרובה {selectedIds.size > 0 ? `(${selectedIds.size})` : ''}
-              </button>
               <button onClick={exportCasesCsv} className="btn btn-secondary h-12">
                 ייצוא CSV
               </button>
@@ -423,78 +416,7 @@ export function CasesPage() {
         </div>
       ) : null}
 
-      {showBulkEditModal ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-          <div className="w-full max-w-lg rounded-3xl border border-border/60 bg-surface p-6 shadow-card">
-            <div className="text-right">
-              <div className="text-xl font-bold">עריכה מרובה</div>
-              <div className="text-sm text-muted mt-1">נבחרו {selectedIds.size} תיקים</div>
-            </div>
-            <div className="mt-5 flex flex-col gap-4">
-              <div>
-                <label className="block text-sm text-muted mb-1 text-right">סטטוס</label>
-                <select
-                  className="w-full h-12 rounded-xl bg-background border border-border/70 px-4 text-text outline-none focus:ring-2 focus:ring-primary/60"
-                  value={bulkStatus}
-                  onChange={(e) => setBulkStatus(e.target.value as CaseStatus | '')}
-                >
-                  <option value="">לא לשנות</option>
-                  <option value="OPEN">פתוח</option>
-                  <option value="CLOSED">סגור</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm text-muted mb-1 text-right">סוג תיק</label>
-                <select
-                  className="w-full h-12 rounded-xl bg-background border border-border/70 px-4 text-text outline-none focus:ring-2 focus:ring-primary/60"
-                  value={bulkCaseType}
-                  onChange={(e) => setBulkCaseType(e.target.value as CaseType | '')}
-                >
-                  <option value="">לא לשנות</option>
-                  {CASE_TYPES.map((t) => (
-                    <option key={t} value={t}>
-                      {CASE_TYPE_LABEL[t]}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm text-muted mb-1 text-right">שלב משפטי (דריסה ידנית)</label>
-                <select
-                  className="w-full h-12 rounded-xl bg-background border border-border/70 px-4 text-text outline-none focus:ring-2 focus:ring-primary/60"
-                  value={bulkStageOverride}
-                  onChange={(e) => setBulkStageOverride(e.target.value)}
-                >
-                  <option value="">לא לשנות</option>
-                  <option value="__CLEAR__">נקה שלב ידני</option>
-                  {STAGE_OVERRIDE_CODES.map((code) => (
-                    <option key={code} value={code}>
-                      {PROCEDURE_STAGE_LABEL[code] ?? code}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            {bulkError ? <div className="mt-4 text-sm text-red-300 text-right">{bulkError}</div> : null}
-            <div className="flex gap-3 justify-end mt-6">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowBulkEditModal(false)
-                  setBulkError(null)
-                }}
-                className="btn btn-secondary"
-                disabled={bulkSaving}
-              >
-                ביטול
-              </button>
-              <button type="button" onClick={saveBulkEdit} className="btn btn-primary" disabled={bulkSaving}>
-                {bulkSaving ? 'שומר…' : 'שמור'}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      {/* Bulk edit UI removed (endpoint /cases/bulk-update kept). */}
 
       {showCreateModal ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">

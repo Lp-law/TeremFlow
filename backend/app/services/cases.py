@@ -293,6 +293,32 @@ def update_case_retainer_dates(
     return c
 
 
+def update_case_identity(
+    db: Session,
+    *,
+    case_id: int,
+    case_reference: str | None = None,
+    case_name: str | None = None,
+) -> Case:
+    """Update case_reference and/or case_name. Admin-only. Validates case_reference non-empty and no duplicate."""
+    c = get_case_if_not_deleted(db, case_id)
+    if not c:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+    if case_reference is not None:
+        ref = str(case_reference).strip()
+        if not ref:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="case_reference cannot be empty")
+        existing = db.query(Case).filter(Case.case_reference == ref, Case.id != case_id, Case.deleted_at.is_(None)).first()
+        if existing:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="case_reference already in use")
+        c.case_reference = ref
+    if case_name is not None:
+        c.case_name = str(case_name).strip() or None
+    db.commit()
+    db.refresh(c)
+    return c
+
+
 def update_case_notes(db: Session, *, case_id: int, case_notes: str | None) -> Case:
     """Update case_notes. Pass empty string to clear; None leaves unchanged if using PATCH with omit."""
     c = get_case_if_not_deleted(db, case_id)

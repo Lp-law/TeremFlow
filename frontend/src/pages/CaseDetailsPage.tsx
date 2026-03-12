@@ -101,7 +101,7 @@ export function CaseDetailsPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  type ModalKind = 'expense' | 'retainerPayment' | 'stageBilling' | 'notes'
+  type ModalKind = 'expense' | 'retainerPayment' | 'retainerLegacyRange' | 'stageBilling' | 'notes'
   const [activeModal, setActiveModal] = useState<ModalKind | null>(null)
   const [retainerReloadKey, setRetainerReloadKey] = useState(0)
   const [feesReloadKey, setFeesReloadKey] = useState(0)
@@ -323,6 +323,7 @@ export function CaseDetailsPage() {
                   caseItem={caseItem}
                   isAdmin={isAdmin}
                   onOpenAddPayment={() => setActiveModal('retainerPayment')}
+                  onOpenLegacyRange={() => setActiveModal('retainerLegacyRange')}
                   retainerReloadKey={retainerReloadKey}
                   onRetainerChange={() => setRefreshOverviewDeductibleKey((k) => k + 1)}
                   onCaseUpdated={load}
@@ -369,6 +370,21 @@ export function CaseDetailsPage() {
             setActiveModal(null)
             setRetainerReloadKey((k) => k + 1)
             await load()
+          }}
+        />
+      ) : null}
+      {caseItem && activeModal === 'retainerLegacyRange' ? (
+        <LegacyRetainerRangeModal
+          caseId={caseItem.id}
+          onClose={() => setActiveModal(null)}
+          onSaved={async () => {
+            setActiveModal(null)
+            setRetainerReloadKey((k) => k + 1)
+            await load()
+          }}
+          onToast={(msg) => {
+            setToast(msg)
+            setTimeout(() => setToast(null), 4000)
           }}
         />
       ) : null}
@@ -802,13 +818,7 @@ function OverviewTab({
         ) : null}
       </section>
 
-      {/* Emergency Manual Entry — works even when overview-summary/deductible-summary 500 */}
-      <ManualEntryPanel
-        caseId={caseId}
-        caseItem={caseItem}
-        onSaved={onCaseUpdated}
-        onToast={onToast}
-      />
+      {/* Manual entry panel removed from UI (endpoints kept). */}
 
       {/* Data quality warnings — read-only; no formula or data changes */}
       <section>
@@ -1913,6 +1923,7 @@ function RetainerPanel({
   caseItem,
   isAdmin = false,
   onOpenAddPayment,
+  onOpenLegacyRange,
   retainerReloadKey,
   onRetainerChange,
   onCaseUpdated,
@@ -1922,6 +1933,7 @@ function RetainerPanel({
   caseItem: CaseOut
   isAdmin?: boolean
   onOpenAddPayment: () => void
+  onOpenLegacyRange?: () => void
   retainerReloadKey: number
   onRetainerChange?: () => void
   onCaseUpdated?: () => void | Promise<void>
@@ -2022,21 +2034,21 @@ function RetainerPanel({
 
   const cfg = ledger?.config
   const monthlyDisplay = cfg ? `${formatILS(cfg.monthly_base_net_ils)} + מע״מ ${cfg.vat_pct} = ${formatILS(cfg.monthly_gross_ils)}` : '—'
-  // When we have ledger rows, always compute from rows (source of truth), not from API
-  const hasRows = ledger?.rows && ledger.rows.length > 0
-  const chargedMonthsFromRows = hasRows ? new Set(ledger.rows!.map((r: { month: string }) => r.month)).size : null
-  const paidTotalFromRows = hasRows
-    ? ledger.rows!.reduce((sum: number, r: { paid_ils: string | number }) => sum + toNumber(r.paid_ils ?? 0), 0)
-    : null
-  const chargedMonths = hasRows ? chargedMonthsFromRows : (overview?.retainer?.charged_months_count ?? '—')
+  const rowsArray = Array.isArray(ledger?.rows) ? ledger.rows : []
+  const hasRows = rowsArray.length > 0
+  const chargedMonthsFromRows = hasRows ? new Set(rowsArray.map((r) => String((r as { month?: string }).month ?? ''))).size : 0
+  const paidTotalFromRows = hasRows ? rowsArray.reduce((sum, r) => sum + toNumber((r as { paid_ils?: string | number }).paid_ils ?? 0), 0) : 0
+  const chargedMonths = hasRows ? chargedMonthsFromRows : (ledger?.charged_months_count ?? overview?.retainer?.charged_months_count ?? '—')
   const retainerCharged = overview ? toNumber(overview.retainer.retainer_charged_to_date_ils ?? 0) : null
   const retainerPaidTotal = hasRows ? paidTotalFromRows : (ledger != null && ledger.retainer_paid_total_ils_gross != null ? toNumber(ledger.retainer_paid_total_ils_gross) : null)
   const rowOrder = (type: string) => (type === 'snapshot' ? 0 : type === 'payment' ? 1 : 2)
-  const sortedRows = ledger?.rows
-    ? [...ledger.rows].sort((a, b) => {
-        const cmp = (a.month || '').localeCompare(b.month || '')
+  const sortedRows = hasRows
+    ? [...rowsArray].sort((a, b) => {
+        const ma = String((a as { month?: string }).month ?? '')
+        const mb = String((b as { month?: string }).month ?? '')
+        const cmp = ma.localeCompare(mb)
         if (cmp !== 0) return cmp
-        return rowOrder(a.row_type || '') - rowOrder(b.row_type || '')
+        return rowOrder((a as { row_type?: string }).row_type || '') - rowOrder((b as { row_type?: string }).row_type || '')
       })
     : []
 
@@ -2046,8 +2058,8 @@ function RetainerPanel({
       {/* סה״כ חודשי חיוב (מהפנקס כולל ידני), סה״כ ששולם (כולל ידני), תיאורטי */}
       <div className="card-soft p-4">
         <div className="text-sm text-muted">סה״כ חודשי חיוב: <span className="font-semibold text-foreground">{chargedMonths}</span></div>
-        {(retainerPaidTotal != null || (hasRows && paidTotalFromRows != null)) ? (
-          <div className="text-sm text-muted mt-1">סה״כ הריטיינר ששולם (כולל ידני): <span className="font-semibold text-foreground">{formatILS(retainerPaidTotal ?? paidTotalFromRows ?? 0)}</span></div>
+        {(hasRows || retainerPaidTotal != null) ? (
+          <div className="text-sm text-muted mt-1">סה״כ הריטיינר ששולם (כולל ידני): <span className="font-semibold text-foreground">{formatILS(hasRows ? paidTotalFromRows : (retainerPaidTotal ?? 0))}</span></div>
         ) : null}
         <div className="text-xs text-muted mt-1">שכ״ט ששולם עד כה (תיאורטי): {retainerCharged != null ? formatILS(retainerCharged) : '—'}</div>
       </div>
@@ -2162,13 +2174,20 @@ function RetainerPanel({
           <div>
             <div className="font-semibold">פנקס ריטיינר חודשי</div>
             <div className="text-sm text-muted mt-1">סה״כ חודשי חיוב: {chargedMonths} — נצבר, שולם ויתרת קרדיט לפי חודש</div>
-            {ledger && (retainerPaidTotal != null || (hasRows && paidTotalFromRows != null)) ? (
-              <div className="text-sm mt-1">סה״כ הריטיינר ששולם (כולל ידני): <span className="font-semibold text-foreground">{formatILS(retainerPaidTotal ?? paidTotalFromRows ?? 0)}</span></div>
+            {ledger && (hasRows || retainerPaidTotal != null) ? (
+              <div className="text-sm mt-1">סה״כ הריטיינר ששולם (כולל ידני): <span className="font-semibold text-foreground">{formatILS(hasRows ? paidTotalFromRows : (retainerPaidTotal ?? 0))}</span></div>
             ) : null}
           </div>
-          <button type="button" onClick={onOpenAddPayment} className="btn btn-primary">
-            הוסף תשלום ריטיינר
-          </button>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={onOpenAddPayment} className="btn btn-primary">
+              הוסף תשלום ריטיינר
+            </button>
+            {isAdmin && onOpenLegacyRange ? (
+              <button type="button" onClick={onOpenLegacyRange} className="btn btn-secondary">
+                הוסף ריטיינר לגאסי (טווח)
+              </button>
+            ) : null}
+          </div>
         </div>
         {ledger ? (
           <div className="mt-4 overflow-x-auto">
@@ -2214,6 +2233,97 @@ function RetainerPanel({
         ) : (
           <div className="mt-4 py-6 text-center text-muted text-sm">פנקס לא נטען. ניתן לערוך תאריכים והקפאה למעלה.</div>
         )}
+      </div>
+    </div>
+  )
+}
+
+function LegacyRetainerRangeModal({
+  caseId,
+  onClose,
+  onSaved,
+  onToast,
+}: {
+  caseId: number
+  onClose: () => void
+  onSaved: () => void
+  onToast?: (msg: string) => void
+}) {
+  const [startDate, setStartDate] = useState('2024-01-01')
+  const [endDate, setEndDate] = useState('2024-06-30')
+  const [amount, setAmount] = useState('1105.65')
+  const [note, setNote] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  async function submit() {
+    setError(null)
+    const start = startDate.trim()
+    const end = endDate.trim()
+    const amt = toNumber(amount)
+    if (!start || !end) {
+      setError('נא להזין תאריך התחלה וסיום')
+      return
+    }
+    if (!Number.isFinite(amt) || amt <= 0) {
+      setError('נא להזין סכום חודשי תקין')
+      return
+    }
+    if (new Date(start) > new Date(end)) {
+      setError('תאריך סיום חייב להיות אחרי תאריך התחלה')
+      return
+    }
+    setIsSubmitting(true)
+    try {
+      await apiFetch(`/cases/${caseId}/retainer/legacy-range`, {
+        method: 'POST',
+        body: JSON.stringify({
+          start_date: start,
+          end_date: end,
+          monthly_amount_ils_gross: amt,
+          note: note.trim() || undefined,
+        }),
+      })
+      onToast?.('נוסף')
+      onSaved()
+    } catch (e: any) {
+      setError(e?.message || 'שגיאה')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="modal">
+      <div className="modal-overlay" onClick={onClose} />
+      <div className="modal-panel max-w-md">
+        <div className="text-right">
+          <div className="text-lg font-semibold">הוסף ריטיינר לגאסי (טווח)</div>
+          <div className="text-sm text-muted mt-1">נוצרות תשלומים אוטומטיים — חודש אחד לכל חודש בטווח.</div>
+        </div>
+        <div className="mt-4 space-y-3">
+          <div>
+            <label className="block text-sm text-muted mb-1 text-right">תאריך התחלה</label>
+            <input type="date" className="input w-full" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-sm text-muted mb-1 text-right">תאריך סיום</label>
+            <input type="date" className="input w-full" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-sm text-muted mb-1 text-right">סכום חודשי (ש״ח)</label>
+            <input type="number" min="0" step="0.01" className="input w-full" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-sm text-muted mb-1 text-right">הערה (אופציונלי)</label>
+            <input type="text" className="input w-full" value={note} onChange={(e) => setNote(e.target.value)} placeholder="LEGACY: ..." />
+          </div>
+        </div>
+        {error ? <div className="mt-3 text-sm text-red-300 text-right" role="alert">{error}</div> : null}
+        <div className="flex gap-3 justify-end mt-6">
+          <button type="button" onClick={onClose} className="btn btn-secondary" disabled={isSubmitting}>ביטול</button>
+          <button type="button" onClick={submit} className="btn btn-primary" disabled={isSubmitting}>{isSubmitting ? '...' : 'הוסף'}</button>
+        </div>
       </div>
     </div>
   )
