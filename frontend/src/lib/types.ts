@@ -180,6 +180,7 @@ export type RetainerLedger = {
   current_credit_ils: string | number
   charged_months_count: number
   retainer_paid_total_ils_gross: string | number
+  total_accrued_ils?: string | number
   rows: RetainerLedgerRow[]
 }
 

@@ -338,6 +338,7 @@ export function CaseDetailsPage() {
                   caseId={caseItem.id}
                   historicalFeeStages={caseItem.historical_fee_stages ?? []}
                   legacyFeeText={caseItem.legacy_fee_text ?? null}
+                  showLegacyFeeText={isAdmin}
                   onOpenStageBilling={() => setActiveModal('stageBilling')}
                   feesReloadKey={feesReloadKey}
                   onFeeEventDeleted={() => setRefreshOverviewDeductibleKey((k) => k + 1)}
@@ -2040,8 +2041,10 @@ function RetainerPanel({
   const paidTotalFromRows = hasRows ? rowsArray.reduce((sum, r) => sum + toNumber((r as { paid_ils?: string | number }).paid_ils ?? 0), 0) : 0
   const chargedMonths = hasRows ? chargedMonthsFromRows : (ledger?.charged_months_count ?? overview?.retainer?.charged_months_count ?? '—')
   const retainerCharged = overview ? toNumber(overview.retainer.retainer_charged_to_date_ils ?? 0) : null
-  const retainerPaidTotal = hasRows ? paidTotalFromRows : (ledger != null && ledger.retainer_paid_total_ils_gross != null ? toNumber(ledger.retainer_paid_total_ils_gross) : null)
-  const rowOrder = (type: string) => (type === 'snapshot' ? 0 : type === 'payment' ? 1 : 2)
+  const retainerPaidTotal = ledger != null && ledger.retainer_paid_total_ils_gross != null ? toNumber(ledger.retainer_paid_total_ils_gross) : (hasRows ? paidTotalFromRows : null)
+  const ledgerAccruedTotal = ledger?.total_accrued_ils != null ? toNumber(ledger.total_accrued_ils) : null
+  const ledgerCredit = ledger?.current_credit_ils != null ? toNumber(ledger.current_credit_ils) : null
+  const rowOrder = (type: string) => (type === 'snapshot' ? 0 : type === 'accrual' ? 1 : 2)
   const sortedRows = hasRows
     ? [...rowsArray].sort((a, b) => {
         const ma = String((a as { month?: string }).month ?? '')
@@ -2055,13 +2058,18 @@ function RetainerPanel({
   return (
     <div className="space-y-6 text-right">
       {error ? <div className="rounded-xl bg-amber-500/20 border border-amber-500/50 px-4 py-3 text-amber-800 dark:text-amber-200">{error}</div> : null}
-      {/* סה״כ חודשי חיוב (מהפנקס כולל ידני), סה״כ ששולם (כולל ידני), תיאורטי */}
+      {/* למעלה: תיאורטי (unified); פנקס: totals מהלדג'ר בלבד כשזמין */}
       <div className="card-soft p-4">
         <div className="text-sm text-muted">סה״כ חודשי חיוב: <span className="font-semibold text-foreground">{chargedMonths}</span></div>
-        {(hasRows || retainerPaidTotal != null) ? (
-          <div className="text-sm text-muted mt-1">סה״כ הריטיינר ששולם (כולל ידני): <span className="font-semibold text-foreground">{formatILS(hasRows ? paidTotalFromRows : (retainerPaidTotal ?? 0))}</span></div>
-        ) : null}
         <div className="text-xs text-muted mt-1">שכ״ט ששולם עד כה (תיאורטי): {retainerCharged != null ? formatILS(retainerCharged) : '—'}</div>
+        {ledger != null ? (
+          <>
+            <div className="text-sm text-muted mt-2 pt-2 border-t border-border/40">פנקס ריטיינר — סיכום מהלדג'ר (כולל תשלומים ידניים):</div>
+            <div className="text-sm text-muted mt-1">סך תשלומים (paid): <span className="font-semibold text-foreground">{formatILS(retainerPaidTotal ?? 0)}</span></div>
+            {ledgerAccruedTotal != null ? <div className="text-sm text-muted mt-1">סך נצבר (accrued): <span className="font-semibold text-foreground">{formatILS(ledgerAccruedTotal)}</span></div> : null}
+            {ledgerCredit != null ? <div className="text-sm text-muted mt-1">יתרת קרדיט: <span className="font-semibold text-foreground">{formatILS(ledgerCredit)}</span></div> : null}
+          </>
+        ) : null}
       </div>
 
       {/* Monthly rate (read-only) */}
@@ -2174,8 +2182,8 @@ function RetainerPanel({
           <div>
             <div className="font-semibold">פנקס ריטיינר חודשי</div>
             <div className="text-sm text-muted mt-1">סה״כ חודשי חיוב: {chargedMonths} — נצבר, שולם ויתרת קרדיט לפי חודש</div>
-            {ledger && (hasRows || retainerPaidTotal != null) ? (
-              <div className="text-sm mt-1">סה״כ הריטיינר ששולם (כולל ידני): <span className="font-semibold text-foreground">{formatILS(hasRows ? paidTotalFromRows : (retainerPaidTotal ?? 0))}</span></div>
+            {ledger && retainerPaidTotal != null ? (
+              <div className="text-sm mt-1">סה״כ הריטיינר ששולם (כולל ידני): <span className="font-semibold text-foreground">{formatILS(retainerPaidTotal)}</span></div>
             ) : null}
           </div>
           <div className="flex items-center gap-2">
@@ -2427,6 +2435,7 @@ function FeesPanel({
   caseId,
   historicalFeeStages,
   legacyFeeText,
+  showLegacyFeeText = false,
   onOpenStageBilling,
   feesReloadKey,
   onFeeEventDeleted,
@@ -2435,6 +2444,7 @@ function FeesPanel({
   caseId: number
   historicalFeeStages: string[]
   legacyFeeText: string | null
+  showLegacyFeeText?: boolean
   onOpenStageBilling: () => void
   feesReloadKey: number
   onFeeEventDeleted?: () => void
@@ -2477,7 +2487,7 @@ function FeesPanel({
 
   return (
     <div className="space-y-6">
-      {legacyFeeText ? (
+      {showLegacyFeeText && legacyFeeText ? (
         <div className="card-soft p-5">
           <div className="text-right mb-2">
             <div className="font-semibold">פירוט חיוב שכ״ט (ייבוא)</div>

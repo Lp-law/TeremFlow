@@ -325,6 +325,7 @@ def _ledger_payments_only(db: Session, *, case_id: int) -> dict:
         "current_credit_ils": summary["retainer_credit_balance_ils_gross"],
         "charged_months_count": charged_months_count,
         "retainer_paid_total_ils_gross": summary["retainer_paid_total_ils_gross"],
+        "total_accrued_ils": Decimal("0"),
         "rows": rows,
     }
 
@@ -375,11 +376,11 @@ def build_retainer_ledger(db: Session, *, case_id: int) -> dict:
         .all()
     )
 
-    # Sort by month (YYYY-MM) ascending, then within same month: snapshot → payment → accrual, then by date/id for stability.
+    # Sort by month (YYYY-MM) ascending, then within same month: snapshot → accrual → payment, then by date for stability.
     def row_sort_key(item):
         d, row_type, row_dict = item
         month_str = row_dict.get("month") or d.strftime("%Y-%m")
-        order = 0 if row_type == "snapshot" else (1 if row_type == "payment" else 2)
+        order = 0 if row_type == "snapshot" else (1 if row_type == "accrual" else 2)
         return (month_str, order, d)
 
     merged: list[tuple[dt.date, str, dict]] = []
@@ -426,6 +427,8 @@ def build_retainer_ledger(db: Session, *, case_id: int) -> dict:
         rows.append(row_dict)
 
     charged_months_count = len({r["month"] for r in rows})
+    total_paid_ils = summary["retainer_paid_total_ils_gross"]
+    total_accrued_ils = q_ils(sum(r["accrued_ils"] for r in rows))
 
     return {
         "config": config,
@@ -434,7 +437,8 @@ def build_retainer_ledger(db: Session, *, case_id: int) -> dict:
         "snapshot_paid_ils": snapshot_paid,
         "current_credit_ils": current_credit,
         "charged_months_count": charged_months_count,
-        "retainer_paid_total_ils_gross": summary["retainer_paid_total_ils_gross"],
+        "retainer_paid_total_ils_gross": total_paid_ils,
+        "total_accrued_ils": total_accrued_ils,
         "rows": rows,
     }
 

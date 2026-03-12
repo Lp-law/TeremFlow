@@ -62,6 +62,7 @@ def test_retainer_ledger_includes_manual_payments_and_totals(db: Session):
     payment_rows = [r for r in data["rows"] if r["row_type"] == "payment"]
     assert len(payment_rows) == 2
     assert data["retainer_paid_total_ils_gross"] == Decimal("2220.75")
+    assert "total_accrued_ils" in data
     assert all(r["paid_ils"] > 0 for r in payment_rows)
 
 
@@ -80,3 +81,11 @@ def test_retainer_end_date_persists_and_caps_effective_end(db: Session):
     assert getattr(c, "retainer_end_date", None) == dt.date(2024, 9, 15)
     assert get_effective_end_date(c) == dt.date(2024, 9, 15)
     assert charged_months_count(c) == 3  # Jul, Aug, Sep
+
+
+def test_charged_months_count_anchor_jan_end_june_six_months(db: Session):
+    """anchor=2024-01-01, end=2024-06-30 => 6 months (Jan through Jun inclusive)."""
+    c = _minimal_case(db, retainer_anchor_date=dt.date(2024, 1, 1))
+    db.refresh(c)
+    setattr(c, "retainer_end_date", dt.date(2024, 6, 30))
+    assert charged_months_count(c) == 6
