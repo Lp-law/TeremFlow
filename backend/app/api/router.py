@@ -1,8 +1,10 @@
 from fastapi import APIRouter
 
-from app.api.routes import activity, admin, analytics, auth, backups, cases, deductible, expenses, fee_events, fee_stage_rates, import_excel, notifications, retainers, tasks
+from app.api.routes import activity, admin, analytics, auth, backups, cases, deductible, expenses, fee_events, fee_stage_rates, import_excel, notifications, retainers, tasks, version
 
 api_router = APIRouter()
+
+api_router.include_router(version.router, tags=["version"])
 
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(cases.router, prefix="/cases", tags=["cases"])

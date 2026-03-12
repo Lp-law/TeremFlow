@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,6 +9,7 @@ from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from app.api.router import api_router
+from app.api.routes.version import set_build_time_utc
 from app.core.config import settings
 from app.core.security import constant_time_equals
 from app.db.init_db import ensure_seeded
@@ -95,11 +97,8 @@ def create_app() -> FastAPI:
 
     @app.on_event("startup")
     def _startup() -> None:
-        """
-        Local-dev helper: allow running without Postgres by using SQLite.
-        - Creates tables (without Alembic) when DATABASE_URL points at sqlite.
-        - Seeds default users so login works immediately.
-        """
+        """Set build-time fingerprint and optional local-dev SQLite setup."""
+        set_build_time_utc(datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"))
         db_url = settings.database_url or ""
         if settings.environment == "development" and db_url.startswith("sqlite"):
             Base.metadata.create_all(bind=engine)

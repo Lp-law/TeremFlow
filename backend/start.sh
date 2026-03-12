@@ -8,6 +8,8 @@ export PYTHONPATH="${SCRIPT_DIR}:${PYTHONPATH:-}"
 
 echo "Running migrations..."
 alembic upgrade head
+REV=$(alembic current 2>/dev/null | awk '{print $1}' || echo "none")
+echo "DB revision after migrate: ${REV}"
 
 echo "Seeding initial users (if empty)..."
 python -c "from app.db.session import SessionLocal; from app.db.init_db import ensure_seeded; db=SessionLocal(); ensure_seeded(db); db.close()"
