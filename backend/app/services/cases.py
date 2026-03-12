@@ -579,6 +579,8 @@ def build_case_overview_summary(db: Session, case_id: int) -> dict | None:
         },
         "retainer": {
             "retainer_charged_to_date_ils": u["retainer_charged_to_date_ils"],
+            "retainer_regular_theoretical_ils": u["retainer_regular_theoretical_ils"],
+            "retainer_legacy_theoretical_ils": u["retainer_legacy_theoretical_ils"],
             "charged_months_count": u["charged_months_count"],
             "monthly_gross_ils": monthly,
             "retainer_is_frozen": getattr(case, "retainer_is_frozen", False),

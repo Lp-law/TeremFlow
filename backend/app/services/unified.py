@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.models.case import Case
 from app.models.fee_event import FeeEvent
+from app.models.retainer import RetainerPayment
 from app.services.deductible import q_ils
 from app.services.retainer import (
     _accrual_start_month,
@@ -73,13 +74,10 @@ def get_effective_end_date(case: Case) -> dt.date:
 
 
 def _effective_anchor_date(case: Case) -> dt.date | None:
-    """Retainer anchor date; if missing, derive from open_date. None only if both missing."""
+    """Retainer anchor date for charged/theoretical. None when not set (no fallback to open_date so charged=0)."""
     anchor = getattr(case, "retainer_anchor_date", None)
     if anchor is not None and isinstance(anchor, dt.date):
         return anchor
-    open_date = getattr(case, "open_date", None)
-    if open_date is not None and isinstance(open_date, dt.date):
-        return get_retainer_anchor_date(open_date)
     return None
 
 
@@ -97,14 +95,21 @@ def charged_months_count(case: Case) -> int:
     return count_charged_months(anchor, effective_end, snapshot_through)
 
 
-def retainer_charged_to_date_ils(db: Session, case: Case) -> Decimal:
-    """Theoretical retainer charged = sum of monthly_gross_ils for each month from start to effective_end.
-    Returns 0 if anchor/open_date missing.
+def _legacy_retainer_theoretical_ils(db: Session, case_id: int) -> Decimal:
+    """Sum of amount_ils_gross for retainer_payments with note starting with 'LEGACY' (legacy range entries).
+    Part of theoretical charged; these payments remain in ledger as paid but add to theoretical total.
     """
-    overrides = _safe_overrides(case)
-    parsed = _parse_override_to_decimal(overrides.get("retainer_charged_override"))
-    if parsed is not None:
-        return parsed
+    payments = db.query(RetainerPayment).filter(RetainerPayment.case_id == case_id).all()
+    legacy_total = Decimal("0.00")
+    for p in payments:
+        note = (p.note or "").strip()
+        if note.upper().startswith("LEGACY"):
+            legacy_total += Decimal(str(p.amount_ils_gross))
+    return q_ils(legacy_total)
+
+
+def _regular_retainer_theoretical_ils(db: Session, case: Case) -> Decimal:
+    """Theoretical from anchor to effective_end only (945+VAT per month). Excludes legacy."""
     anchor = _effective_anchor_date(case)
     if anchor is None:
         return q_ils(Decimal("0.00"))
@@ -123,6 +128,19 @@ def retainer_charged_to_date_ils(db: Session, case: Case) -> Decimal:
     return q_ils(total)
 
 
+def retainer_charged_to_date_ils(db: Session, case: Case) -> Decimal:
+    """Theoretical retainer charged = regular (anchor→effective_end) + legacy (LEGACY payments sum).
+    Override retainer_charged_override replaces the total if set.
+    """
+    overrides = _safe_overrides(case)
+    parsed = _parse_override_to_decimal(overrides.get("retainer_charged_override"))
+    if parsed is not None:
+        return parsed
+    regular = _regular_retainer_theoretical_ils(db, case)
+    legacy = _legacy_retainer_theoretical_ils(db, case.id)
+    return q_ils(regular + legacy)
+
+
 def fees_by_stages_ils(db: Session, case: Case) -> Decimal:
     """Sum of non-deleted fee events (computed_amount_ils_gross)."""
     overrides = _safe_overrides(case)
@@ -135,8 +153,8 @@ def fees_by_stages_ils(db: Session, case: Case) -> Decimal:
         .all()
     )
     total = sum(
-        Decimal("0.00") if r[0] is None else Decimal(str(r[0]))
-        for r in rows
+        (Decimal("0.00") if r[0] is None else Decimal(str(r[0])) for r in rows),
+        Decimal("0.00"),
     )
     return q_ils(total)
 
@@ -197,8 +215,15 @@ def fee_diff_ils(db: Session, case: Case) -> Decimal:
 
 def get_unified_summary(db: Session, case: Case) -> dict[str, Any]:
     """All unified values for overview/deductible tab/export."""
+    overrides = _safe_overrides(case)
+    override_total = _parse_override_to_decimal(overrides.get("retainer_charged_override"))
+    regular = _regular_retainer_theoretical_ils(db, case)
+    legacy = _legacy_retainer_theoretical_ils(db, case.id)
+    total = override_total if override_total is not None else q_ils(regular + legacy)
     return {
-        "retainer_charged_to_date_ils": retainer_charged_to_date_ils(db, case),
+        "retainer_charged_to_date_ils": total,
+        "retainer_regular_theoretical_ils": regular,
+        "retainer_legacy_theoretical_ils": legacy,
         "fees_by_stages_ils": fees_by_stages_ils(db, case),
         "expenses_total_ils": expenses_total_ils(case),
         "excess_total_ils": excess_total_ils(case),

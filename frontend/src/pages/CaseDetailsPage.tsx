@@ -2052,6 +2052,9 @@ function RetainerPanel({
       <div className="card-soft p-4">
         <div className="text-sm text-muted">סה״כ חודשי חיוב: <span className="font-semibold text-foreground">{chargedMonths}</span></div>
         <div className="text-xs text-muted mt-1">שכ״ט ששולם עד כה (תיאורטי): {retainerCharged != null ? formatILS(retainerCharged) : '—'}</div>
+        {overview?.retainer?.retainer_legacy_theoretical_ils != null && toNumber(overview.retainer.retainer_legacy_theoretical_ils) > 0 ? (
+          <div className="text-xs text-muted mt-1">כולל LEGACY: {formatILS(overview.retainer.retainer_legacy_theoretical_ils)}</div>
+        ) : null}
         {ledger != null ? (
           <>
             <div className="text-sm text-muted mt-2 pt-2 border-t border-border/40">פנקס ריטיינר — סיכום מהלדג'ר (כולל תשלומים ידניים):</div>

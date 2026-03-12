@@ -13,7 +13,12 @@ from app.models.enums import CaseStatus, CaseType
 from app.models.retainer import RetainerPayment
 from app.services.cases import update_case_retainer_dates
 from app.services.retainer import build_retainer_ledger
-from app.services.unified import charged_months_count, get_effective_end_date
+from app.services.retainer import retainer_gross_for_month
+from app.services.unified import (
+    charged_months_count,
+    get_effective_end_date,
+    retainer_charged_to_date_ils,
+)
 
 
 def _minimal_case(db: Session, **kwargs) -> Case:
@@ -113,3 +118,29 @@ def test_ledger_february_payments_in_feb_paid_ils(db: Session):
     feb_rows = [r for r in data["rows"] if r["month"] == "2026-02"]
     assert len(feb_rows) == 1
     assert feb_rows[0]["paid_ils"] == Decimal("800.00")
+
+
+def test_retainer_charged_to_date_ils_includes_legacy(db: Session):
+    """retainer_charged_to_date_ils = regular (anchor→end) + legacy (LEGACY payments). 3 months + 5 LEGACY = 8 months worth."""
+    # Anchor 2024-07-01, end 2024-09-30 => 3 months (Jul, Aug, Sep) @ 1105.65 each (17% VAT)
+    c = _minimal_case(db, retainer_anchor_date=dt.date(2024, 7, 1))
+    update_case_retainer_dates(
+        db, case_id=c.id, retainer_end_date=dt.date(2024, 9, 30), retainer_end_date_sent=True
+    )
+    db.refresh(c)
+    monthly_2024 = retainer_gross_for_month(dt.date(2024, 7, 1))  # 1105.65
+    # Add 5 LEGACY payments (past period)
+    for month in (1, 2, 3, 4, 5):
+        db.add(
+            RetainerPayment(
+                case_id=c.id,
+                payment_date=dt.date(2024, month, 1),
+                amount_ils_gross=monthly_2024,
+                note="LEGACY: past period",
+            )
+        )
+    db.commit()
+    db.refresh(c)
+    charged = retainer_charged_to_date_ils(db, c)
+    expected = 8 * monthly_2024  # 3 regular + 5 legacy
+    assert charged == expected

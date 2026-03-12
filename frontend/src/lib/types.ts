@@ -108,6 +108,8 @@ export type CaseOverviewSummary = {
   }
   retainer: {
     retainer_charged_to_date_ils: string | number
+    retainer_regular_theoretical_ils?: string | number
+    retainer_legacy_theoretical_ils?: string | number
     charged_months_count: number
     monthly_gross_ils: string | number
     retainer_is_frozen: boolean
