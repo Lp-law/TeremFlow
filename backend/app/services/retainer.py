@@ -540,7 +540,7 @@ def build_retainer_ledger(db: Session, *, case_id: int) -> dict:
         })
 
     charged_months_count = len(month_strs)
-    total_paid_ils = summary["retainer_paid_total_ils_gross"]
+    total_paid_ils = q_ils(summary["retainer_paid_total_ils_gross"] + snapshot_paid)
     total_accrued_ils = q_ils(sum(r["accrued_ils"] for r in rows))
     total_theoretical, total_current_theoretical, total_legacy_theoretical = get_total_retainer_theoretical_ils(db, case)
     display_anchor = (current_start or anchor or case.open_date)

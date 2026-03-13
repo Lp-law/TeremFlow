@@ -134,7 +134,7 @@ def _regular_retainer_theoretical_ils(db: Session, case: Case) -> Decimal:
 
 
 def retainer_charged_to_date_ils(db: Session, case: Case) -> Decimal:
-    """סכום קובע = סה״כ הריטיינר ששולם (כולל ידני) מהפנקס — sum of all retainer payments for this case.
+    """סכום קובע = סה״כ הריטיינר ששולם (כולל ידני) — תשלומים + snapshot (ריטיינר היסטורי מייבוא).
     Override retainer_charged_override replaces the total if set.
     """
     overrides = _safe_overrides(case)
@@ -142,7 +142,14 @@ def retainer_charged_to_date_ils(db: Session, case: Case) -> Decimal:
     if parsed is not None:
         return parsed
     from app.services.retainer import _sum_payments
-    return _sum_payments(db, case.id)
+    paid = _sum_payments(db, case.id)
+    snapshot = getattr(case, "retainer_snapshot_ils_gross", None)
+    if snapshot is not None:
+        try:
+            paid = q_ils(paid + Decimal(str(snapshot)))
+        except (InvalidOperation, ValueError, TypeError):
+            pass
+    return paid
 
 
 def fees_by_stages_ils(db: Session, case: Case) -> Decimal:

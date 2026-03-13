@@ -21,6 +21,20 @@ from app.services.unified import (
 )
 
 
+def test_retainer_charged_includes_snapshot(db: Session):
+    """סה״כ ריטיינר ששולם (כולל ידני) = תשלומים + snapshot (ריטיינר היסטורי מייבוא)."""
+    c = _minimal_case(db, retainer_anchor_date=dt.date(2025, 7, 1))
+    c.retainer_snapshot_ils_gross = Decimal("5900.00")
+    c.retainer_snapshot_through_month = dt.date(2025, 12, 1)
+    db.commit()
+    db.refresh(c)
+    charged = retainer_charged_to_date_ils(db, c)
+    assert charged == Decimal("5900.00")
+    data = build_retainer_ledger(db, case_id=c.id)
+    assert data is not None
+    assert data["retainer_paid_total_ils_gross"] == Decimal("5900.00")
+
+
 def test_retainer_charged_zero_when_no_payments(db: Session):
     """retainer_charged_to_date_ils = sum of payments; no payments → 0."""
     c = _minimal_case(db, retainer_anchor_date=dt.date(2024, 7, 1))
