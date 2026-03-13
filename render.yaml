@@ -50,6 +50,7 @@ services:
     runtime: node
     schedule: "0 6 * * *" # daily 06:00 UTC
     buildCommand: ""
+    # 429 = Render rate limit; more retries + longer delay + Retry-After to improve success
     startCommand: >
       node -e "
       const api=process.env.API_URL;
@@ -58,15 +59,22 @@ services:
       if(!tok){console.error('Missing TASKS_DAILY_SECRET'); process.exit(1);}
       const url=api+'/tasks/daily';
       const opts={method:'POST',headers:{'X-Tasks-Token':tok}};
-      const maxAttempts=3;
-      const retryDelayMs=55000;
+      const maxAttempts=5;
+      const defaultDelayMs=90000;
       async function run(attempt){
         const r=await fetch(url,opts);
         const t=await r.text();
         console.log(t);
         if(r.ok){process.exit(0);}
         const retryable=(r.status===429||r.status>=500)&&attempt<maxAttempts;
-        if(retryable){console.error('HTTP '+r.status+' - retrying in 55s (attempt '+(attempt+1)+'/'+maxAttempts+')'); await new Promise(x=>setTimeout(x,retryDelayMs)); return run(attempt+1);}
+        if(retryable){
+          let delayMs=defaultDelayMs;
+          const ra=r.headers.get('retry-after');
+          if(ra){const s=parseInt(ra,10); if(!isNaN(s)&&s>0) delayMs=Math.min(300000, Math.max(60000, s*1000));}
+          console.error('HTTP '+r.status+' - retrying in '+Math.round(delayMs/1000)+'s (attempt '+(attempt+1)+'/'+maxAttempts+')');
+          await new Promise(x=>setTimeout(x,delayMs));
+          return run(attempt+1);
+        }
         console.error('HTTP '+r.status);
         process.exit(1);
       }
