@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import datetime as dt
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_admin, require_auth
@@ -169,25 +170,52 @@ def debug_theoretical(
     }
 
 
+def _parse_date(v: dt.date | str | None):
+    """Normalize to date or None. Handles ISO string from JSON."""
+    if v is None:
+        return None
+    if isinstance(v, dt.date):
+        return v
+    if isinstance(v, str):
+        v = v.strip()
+        if not v:
+            return None
+        try:
+            return dt.datetime.fromisoformat(v.replace("Z", "+00:00")).date()
+        except (ValueError, TypeError):
+            pass
+    return None
+
+
 @router.patch("/dates", response_model=CaseOut)
-def update_retainer_dates(case_id: int, payload: RetainerDatesUpdate, db: Session = Depends(get_db), _=Depends(require_auth)):
-    """Update retainer_anchor_date, retainer_snapshot_through_month, and/or retainer_end_date (send null to clear end date)."""
+async def update_retainer_dates(
+    case_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    _=Depends(require_auth),
+):
+    """Update retainer dates and current/legacy period dates. Uses raw body so period keys are never dropped."""
+    body = await request.json()
+    payload = RetainerDatesUpdate.model_validate(body)
     updates = payload.model_dump(exclude_unset=True)
+    # Prefer raw body for “key present” so we never drop legacy_end when client sends it
+    def sent(key: str) -> bool:
+        return key in body
     c = case_service.update_case_retainer_dates(
         db,
         case_id=case_id,
-        retainer_anchor_date=updates.get("retainer_anchor_date"),
-        retainer_snapshot_through_month=updates.get("retainer_snapshot_through_month"),
-        retainer_end_date=updates.get("retainer_end_date") if "retainer_end_date" in updates else None,
-        retainer_end_date_sent="retainer_end_date" in updates,
-        retainer_current_start_date=updates.get("retainer_current_start_date"),
-        retainer_current_end_date=updates.get("retainer_current_end_date"),
-        retainer_legacy_start_date=updates.get("retainer_legacy_start_date"),
-        retainer_legacy_end_date=updates.get("retainer_legacy_end_date"),
-        current_start_sent="retainer_current_start_date" in updates,
-        current_end_sent="retainer_current_end_date" in updates,
-        legacy_start_sent="retainer_legacy_start_date" in updates,
-        legacy_end_sent="retainer_legacy_end_date" in updates,
+        retainer_anchor_date=_parse_date(updates.get("retainer_anchor_date")) if "retainer_anchor_date" in updates else None,
+        retainer_snapshot_through_month=_parse_date(updates.get("retainer_snapshot_through_month")) if "retainer_snapshot_through_month" in updates else None,
+        retainer_end_date=_parse_date(body.get("retainer_end_date")) if sent("retainer_end_date") else None,
+        retainer_end_date_sent=sent("retainer_end_date"),
+        retainer_current_start_date=_parse_date(body.get("retainer_current_start_date")) if sent("retainer_current_start_date") else None,
+        retainer_current_end_date=_parse_date(body.get("retainer_current_end_date")) if sent("retainer_current_end_date") else None,
+        retainer_legacy_start_date=_parse_date(body.get("retainer_legacy_start_date")) if sent("retainer_legacy_start_date") else None,
+        retainer_legacy_end_date=_parse_date(body.get("retainer_legacy_end_date")) if sent("retainer_legacy_end_date") else None,
+        current_start_sent=sent("retainer_current_start_date"),
+        current_end_sent=sent("retainer_current_end_date"),
+        legacy_start_sent=sent("retainer_legacy_start_date"),
+        legacy_end_sent=sent("retainer_legacy_end_date"),
     )
     stages = case_service.get_latest_fee_stage_by_case_ids(db, [c.id])
     return CaseOut(**case_service.to_case_out(db, c, current_procedure_stage=stages.get(c.id)))
