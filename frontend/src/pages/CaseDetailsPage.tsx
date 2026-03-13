@@ -1967,9 +1967,14 @@ function RetainerPanel({
     setIsLoading(false)
   }
 
-  // Single init: sync date fields from caseItem only when caseId or retainerReloadKey changes. No sync from caseItem on every render.
+  // Load ledger/overview when case or reload key changes (do not overwrite date inputs here).
   useEffect(() => {
     load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [caseId, retainerReloadKey])
+
+  // Sync date fields from caseItem only when caseId or case identity changes. Never overwrite while user is editing (same case).
+  useEffect(() => {
     const anchor = caseItem.retainer_anchor_date?.slice(0, 10) ?? ''
     const snap = caseItem.retainer_snapshot_through_month ? String(caseItem.retainer_snapshot_through_month).slice(0, 7) : ''
     const end = caseItem.retainer_end_date ? String(caseItem.retainer_end_date).slice(0, 10) : ''
@@ -1985,8 +1990,8 @@ function RetainerPanel({
     setCurrentEndDate(curEnd)
     setLegacyStartDate(legStart)
     setLegacyEndDate(legEnd)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [caseId, retainerReloadKey])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only init dates when case identity changes; do not overwrite draft when parent updates caseItem
+  }, [caseId, caseItem?.id])
 
   async function saveDates() {
     setDatesSaveError(null)
@@ -2006,7 +2011,7 @@ function RetainerPanel({
         retainer_legacy_start_date: legStart,
         retainer_legacy_end_date: legEnd,
       }
-      console.log('PATCH payload', payload)
+      console.log('[debug] retainer dates payload', payload)
       const updated = await apiFetch<CaseOut>(`/cases/${caseId}/retainer/dates`, { method: 'PATCH', body: JSON.stringify(payload) })
       await onCaseUpdated?.(updated)
       const c = updated as { retainer_current_start_date?: string | null; retainer_current_end_date?: string | null; retainer_legacy_start_date?: string | null; retainer_legacy_end_date?: string | null }
@@ -2106,11 +2111,7 @@ function RetainerPanel({
             type="date"
             className="input py-2 w-40"
             value={currentEndDate}
-            onChange={(e) => {
-              const v = e.target.value
-              console.log('retainer_current_end_date onChange', v)
-              setCurrentEndDate(v)
-            }}
+            onChange={(e) => setCurrentEndDate(e.target.value)}
             aria-label="תאריך סיום ריטיינר עדכני"
           />
           <button type="button" onClick={saveDates} disabled={datesSaving} className="btn btn-primary btn-sm">
@@ -2135,11 +2136,7 @@ function RetainerPanel({
             type="date"
             className="input py-2 w-40"
             value={legacyEndDate}
-            onChange={(e) => {
-              const v = e.target.value
-              console.log('retainer_legacy_end_date onChange', v)
-              setLegacyEndDate(v)
-            }}
+            onChange={(e) => setLegacyEndDate(e.target.value)}
             aria-label="תאריך סיום ריטיינר LEGACY"
           />
           <button type="button" onClick={saveDates} disabled={datesSaving} className="btn btn-primary btn-sm">
