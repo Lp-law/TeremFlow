@@ -483,7 +483,7 @@ export function ManualEntryPanel({
         ))}
       </div>
       <p className="text-xs text-muted mt-2">
-        שכ״ט לפי ריטיינר (תיאורטי): לעדכון עוגן ריטיינר והקפאה — לשונית ריטיינר.
+        סה״כ ריטיינר עד כה: לעדכון עוגן ריטיינר והקפאה — לשונית ריטיינר.
       </p>
     </section>
   )
@@ -779,7 +779,7 @@ function OverviewTab({
               <h3 className="text-sm font-semibold text-muted mb-3">תמונת מצב כספית</h3>
               <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div className="card-soft p-4">
-                  <dt className="text-xs text-muted">שכ״ט ששולם עד כה (תיאורטי)</dt>
+                  <dt className="text-xs text-muted">סה״כ ריטיינר עד כה</dt>
                   <dd className="mt-1 font-semibold">{formatILS(overview.retainer.retainer_theoretical_ils ?? overview.retainer.retainer_charged_to_date_ils)}</dd>
                 </div>
                 <div className="card-soft p-4">
@@ -2050,8 +2050,10 @@ function RetainerPanel({
   const rowsArray = Array.isArray(ledger?.rows) ? ledger.rows : []
   const hasRows = rowsArray.length > 0
   const chargedMonths = ledger?.charged_months_count ?? overview?.retainer?.charged_months_count ?? '—'
-  const totalTheoretical = ledger != null && ledger.total_theoretical_ils_gross != null ? toNumber(ledger.total_theoretical_ils_gross) : null
-  const totalPaid = ledger != null && ledger.total_paid_ils_gross != null ? toNumber(ledger.total_paid_ils_gross) : null
+  const totalRetainerCumulative =
+    ledger != null && (ledger.total_theoretical_ils_gross != null || ledger.total_retainer_theoretical_ils_gross != null)
+      ? toNumber(ledger.total_theoretical_ils_gross ?? ledger.total_retainer_theoretical_ils_gross ?? 0)
+      : (overview?.retainer?.retainer_theoretical_ils != null ? toNumber(overview.retainer.retainer_theoretical_ils) : overview?.retainer?.retainer_charged_to_date_ils != null ? toNumber(overview.retainer.retainer_charged_to_date_ils) : null)
   const ledgerAccruedTotal = ledger?.total_accrued_ils != null ? toNumber(ledger.total_accrued_ils) : null
   const ledgerCredit = ledger?.total_credit_ils_gross != null ? toNumber(ledger.total_credit_ils_gross) : (ledger?.current_credit_ils != null ? toNumber(ledger.current_credit_ils) : null)
   const sortedRows = hasRows
@@ -2061,12 +2063,11 @@ function RetainerPanel({
   return (
     <div className="space-y-6 text-right">
       {error ? <div className="rounded-xl bg-amber-500/20 border border-amber-500/50 px-4 py-3 text-amber-800 dark:text-amber-200">{error}</div> : null}
-      {/* מקור אמת יחיד: ledger totals (total_theoretical_ils_gross, total_paid_ils_gross) */}
+      {/* סה״כ ריטיינר עד כה = אותו מספר כמו בסקירה (מקור: ledger total theoretical או overview) */}
       <div className="card-soft p-4">
         <div className="text-sm text-muted">סה״כ חודשי חיוב: <span className="font-semibold text-foreground">{chargedMonths}</span></div>
         <div className="mt-1">
-          <div className="text-sm font-semibold">סה״כ ריטיינר תאורטי (כולל LEGACY): {totalTheoretical != null ? formatILS(totalTheoretical) : '—'}</div>
-          {totalPaid != null ? <div className="text-sm text-muted mt-1">שולם בפועל: <span className="font-semibold text-foreground">{formatILS(totalPaid)}</span></div> : null}
+          <div className="text-sm font-semibold">סה״כ ריטיינר עד כה: {totalRetainerCumulative != null ? formatILS(totalRetainerCumulative) : '—'}</div>
         </div>
         {ledger != null ? (
           <>
@@ -2188,9 +2189,9 @@ function RetainerPanel({
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
             <div className="font-semibold">פנקס ריטיינר חודשי</div>
-            <div className="text-sm text-muted mt-1">סה״כ חודשי חיוב: {chargedMonths} — נצבר, שולם ויתרת קרדיט לפי חודש</div>
-            {ledger && totalPaid != null ? (
-              <div className="text-sm mt-1">סה״כ הריטיינר ששולם (בפועל): <span className="font-semibold text-foreground">{formatILS(totalPaid)}</span></div>
+            <div className="text-sm text-muted mt-1">סה״כ חודשי חיוב: {chargedMonths} — נצבר ויתרת קרדיט לפי חודש</div>
+            {totalRetainerCumulative != null ? (
+              <div className="text-sm mt-1">סה״כ ריטיינר עד כה: <span className="font-semibold text-foreground">{formatILS(totalRetainerCumulative)}</span></div>
             ) : null}
           </div>
           <div className="flex items-center gap-2">
@@ -2211,7 +2212,7 @@ function RetainerPanel({
                 <tr className="border-b border-border/60">
                   <th className="text-right py-3">חודש</th>
                   <th className="text-right py-3">נצבר (ש״ח)</th>
-                  <th className="text-right py-3">שולם (ש״ח)</th>
+                  <th className="text-right py-3">תשלום (ש״ח)</th>
                   <th className="text-right py-3">יתרת קרדיט (ש״ח)</th>
                   <th className="text-right py-3">הערות</th>
                 </tr>
