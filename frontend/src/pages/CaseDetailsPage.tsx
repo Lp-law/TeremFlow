@@ -1985,22 +1985,16 @@ function RetainerPanel({
     setDatesSaveError(null)
     setDatesSaving(true)
     try {
-      const body: {
-        retainer_anchor_date?: string
-        retainer_snapshot_through_month?: string
-        retainer_end_date?: string | null
-        retainer_current_start_date?: string | null
-        retainer_current_end_date?: string | null
-        retainer_legacy_start_date?: string | null
-        retainer_legacy_end_date?: string | null
-      } = {}
-      if (currentStartDate || anchorDate) body.retainer_anchor_date = currentStartDate || anchorDate
-      if (snapshotMonth) body.retainer_snapshot_through_month = `${snapshotMonth}-01`
-      body.retainer_end_date = currentEndDate || retainerEndDate || null
-      body.retainer_current_start_date = currentStartDate || null
-      body.retainer_current_end_date = currentEndDate || null
-      body.retainer_legacy_start_date = legacyStartDate || null
-      body.retainer_legacy_end_date = legacyEndDate || null
+      const norm = (s: string) => (typeof s === 'string' && s.trim() ? s.trim() : null)
+      const body = {
+        retainer_anchor_date: norm(currentStartDate || anchorDate) ?? undefined,
+        retainer_snapshot_through_month: snapshotMonth?.trim() ? `${snapshotMonth.trim()}-01` : undefined,
+        retainer_end_date: norm(currentEndDate || retainerEndDate),
+        retainer_current_start_date: norm(currentStartDate),
+        retainer_current_end_date: norm(currentEndDate),
+        retainer_legacy_start_date: norm(legacyStartDate),
+        retainer_legacy_end_date: norm(legacyEndDate),
+      }
       const updated = await apiFetch<CaseOut>(`/cases/${caseId}/retainer/dates`, { method: 'PATCH', body: JSON.stringify(body) })
       await onCaseUpdated?.(updated)
       const c = updated as { retainer_current_start_date?: string | null; retainer_current_end_date?: string | null; retainer_legacy_start_date?: string | null; retainer_legacy_end_date?: string | null }

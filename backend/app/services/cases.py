@@ -289,6 +289,8 @@ def update_case_retainer_dates(
         c.retainer_current_start_date = retainer_current_start_date
     if current_end_sent:
         c.retainer_current_end_date = retainer_current_end_date
+        # Keep alias in sync so ledger/effective_end use it
+        c.retainer_end_date = retainer_current_end_date
     if legacy_start_sent:
         c.retainer_legacy_start_date = retainer_legacy_start_date
     if legacy_end_sent:
