@@ -1959,16 +1959,9 @@ function RetainerPanel({
     setIsLoading(false)
   }
 
+  // Sync date fields from caseItem only when case/reload changes — do NOT overwrite while user is typing
   useEffect(() => {
     load()
-    setAnchorDate(caseItem.retainer_anchor_date?.slice(0, 10) ?? '')
-    setSnapshotMonth(
-      caseItem.retainer_snapshot_through_month ? String(caseItem.retainer_snapshot_through_month).slice(0, 7) : ''
-    )
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [caseId, retainerReloadKey])
-
-  useEffect(() => {
     setAnchorDate(caseItem.retainer_anchor_date?.slice(0, 10) ?? '')
     setSnapshotMonth(
       caseItem.retainer_snapshot_through_month ? String(caseItem.retainer_snapshot_through_month).slice(0, 7) : ''
@@ -1979,7 +1972,8 @@ function RetainerPanel({
     setCurrentEndDate(c.retainer_current_end_date?.slice(0, 10) ?? caseItem.retainer_end_date?.slice(0, 10) ?? '')
     setLegacyStartDate(c.retainer_legacy_start_date?.slice(0, 10) ?? '')
     setLegacyEndDate(c.retainer_legacy_end_date?.slice(0, 10) ?? '')
-  }, [caseItem.retainer_anchor_date, caseItem.retainer_snapshot_through_month, caseItem.retainer_end_date, (caseItem as { retainer_current_start_date?: string | null }).retainer_current_start_date, (caseItem as { retainer_current_end_date?: string | null }).retainer_current_end_date, (caseItem as { retainer_legacy_start_date?: string | null }).retainer_legacy_start_date, (caseItem as { retainer_legacy_end_date?: string | null }).retainer_legacy_end_date])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [caseId, retainerReloadKey])
 
   async function saveDates() {
     setDatesSaveError(null)
