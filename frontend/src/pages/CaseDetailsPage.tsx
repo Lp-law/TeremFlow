@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { BackButton } from '../components/BackButton'
@@ -1929,6 +1929,15 @@ function RetainerPanel({
   const [legacyEndDate, setLegacyEndDate] = useState(
     (caseItem as { retainer_legacy_end_date?: string | null }).retainer_legacy_end_date?.slice(0, 10) ?? ''
   )
+  /** Refs hold latest input values so Save sends what user sees even if state hasn't flushed yet */
+  const currentStartRef = useRef(currentStartDate)
+  const currentEndRef = useRef(currentEndDate)
+  const legacyStartRef = useRef(legacyStartDate)
+  const legacyEndRef = useRef(legacyEndDate)
+  currentStartRef.current = currentStartDate
+  currentEndRef.current = currentEndDate
+  legacyStartRef.current = legacyStartDate
+  legacyEndRef.current = legacyEndDate
   const [datesSaveError, setDatesSaveError] = useState<string | null>(null)
   const [datesSaving, setDatesSaving] = useState(false)
   const [freezeSaving, setFreezeSaving] = useState(false)
@@ -1988,14 +1997,19 @@ function RetainerPanel({
     setDatesSaving(true)
     try {
       const norm = (s: string) => (typeof s === 'string' && s.trim() ? s.trim() : null)
+      /* Use refs so we send the value currently in the inputs even if React state hasn't updated yet */
+      const curStart = norm(currentStartRef.current || anchorDate) ?? undefined
+      const curEnd = norm(currentEndRef.current || retainerEndDate)
+      const legStart = norm(legacyStartRef.current)
+      const legEnd = norm(legacyEndRef.current)
       const body = {
-        retainer_anchor_date: norm(currentStartDate || anchorDate) ?? undefined,
+        ...(curStart != null ? { retainer_anchor_date: curStart } : {}),
         retainer_snapshot_through_month: snapshotMonth?.trim() ? `${snapshotMonth.trim()}-01` : undefined,
-        retainer_end_date: norm(currentEndDate || retainerEndDate),
-        retainer_current_start_date: norm(currentStartDate),
-        retainer_current_end_date: norm(currentEndDate),
-        retainer_legacy_start_date: norm(legacyStartDate),
-        retainer_legacy_end_date: norm(legacyEndDate),
+        retainer_end_date: curEnd,
+        retainer_current_start_date: curStart ?? null,
+        retainer_current_end_date: curEnd,
+        retainer_legacy_start_date: legStart,
+        retainer_legacy_end_date: legEnd,
       }
       const updated = await apiFetch<CaseOut>(`/cases/${caseId}/retainer/dates`, { method: 'PATCH', body: JSON.stringify(body) })
       await onCaseUpdated?.(updated)
@@ -2088,7 +2102,7 @@ function RetainerPanel({
             type="date"
             className="input py-2 w-40"
             value={currentStartDate}
-            onChange={(e) => setCurrentStartDate(e.target.value)}
+            onChange={(e) => { const v = e.target.value; currentStartRef.current = v; setCurrentStartDate(v) }}
             aria-label="תאריך התחלה ריטיינר עדכני"
           />
           <span className="text-muted">–</span>
@@ -2096,7 +2110,7 @@ function RetainerPanel({
             type="date"
             className="input py-2 w-40"
             value={currentEndDate}
-            onChange={(e) => setCurrentEndDate(e.target.value)}
+            onChange={(e) => { const v = e.target.value; currentEndRef.current = v; setCurrentEndDate(v) }}
             aria-label="תאריך סיום ריטיינר עדכני"
           />
           <button type="button" onClick={saveDates} disabled={datesSaving} className="btn btn-primary btn-sm">
@@ -2113,7 +2127,7 @@ function RetainerPanel({
             type="date"
             className="input py-2 w-40"
             value={legacyStartDate}
-            onChange={(e) => setLegacyStartDate(e.target.value)}
+            onChange={(e) => { const v = e.target.value; legacyStartRef.current = v; setLegacyStartDate(v) }}
             aria-label="תאריך התחלה ריטיינר LEGACY"
           />
           <span className="text-muted">–</span>
@@ -2121,7 +2135,7 @@ function RetainerPanel({
             type="date"
             className="input py-2 w-40"
             value={legacyEndDate}
-            onChange={(e) => setLegacyEndDate(e.target.value)}
+            onChange={(e) => { const v = e.target.value; legacyEndRef.current = v; setLegacyEndDate(v) }}
             aria-label="תאריך סיום ריטיינר LEGACY"
           />
           <button type="button" onClick={saveDates} disabled={datesSaving} className="btn btn-primary btn-sm">
