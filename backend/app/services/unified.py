@@ -134,14 +134,19 @@ def _regular_retainer_theoretical_ils(db: Session, case: Case) -> Decimal:
 
 
 def retainer_charged_to_date_ils(db: Session, case: Case) -> Decimal:
-    """סכום קובע = סה״כ הריטיינר ששולם (כולל ידני) — תשלומים + snapshot (ריטיינר היסטורי מייבוא).
+    """סכום קובע: כשיש תאריכי תקופה (עדכני/לגאסי) = נצבר תיאורטי (חודשים×945+מע״מ); אחרת = תשלומים + snapshot.
     Override retainer_charged_override replaces the total if set.
     """
     overrides = _safe_overrides(case)
     parsed = _parse_override_to_decimal(overrides.get("retainer_charged_override"))
     if parsed is not None:
         return parsed
-    from app.services.retainer import _sum_payments
+    from app.services.retainer import _sum_payments, get_total_retainer_theoretical_ils
+    current_start = getattr(case, "retainer_current_start_date", None)
+    legacy_start = getattr(case, "retainer_legacy_start_date", None)
+    if (current_start is not None and isinstance(current_start, dt.date)) or (legacy_start is not None and isinstance(legacy_start, dt.date)):
+        total, _c, _l = get_total_retainer_theoretical_ils(db, case)
+        return total
     paid = _sum_payments(db, case.id)
     snapshot = getattr(case, "retainer_snapshot_ils_gross", None)
     if snapshot is not None:

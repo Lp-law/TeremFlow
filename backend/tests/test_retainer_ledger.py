@@ -13,6 +13,7 @@ from app.models.enums import CaseStatus, CaseType
 from app.models.retainer import RetainerPayment
 from app.services.cases import update_case_retainer_dates
 from app.services.retainer import build_retainer_ledger
+from app.services.retainer import get_total_retainer_theoretical_ils
 from app.services.retainer import retainer_gross_for_month
 from app.services.unified import (
     charged_months_count,
@@ -35,19 +36,29 @@ def test_retainer_charged_includes_snapshot(db: Session):
     assert data["retainer_paid_total_ils_gross"] == Decimal("5900.00")
 
 
-def test_retainer_charged_zero_when_no_payments(db: Session):
-    """retainer_charged_to_date_ils = sum of payments; no payments → 0."""
+def test_retainer_charged_zero_when_no_payments_and_no_period_dates(db: Session):
+    """When no period dates (current/legacy) and no payments, retainer_charged_to_date_ils = 0."""
     c = _minimal_case(db, retainer_anchor_date=dt.date(2024, 7, 1))
     update_case_retainer_dates(
         db, case_id=c.id, retainer_end_date=dt.date(2024, 9, 30), retainer_end_date_sent=True
     )
     db.refresh(c)
+    # Do not set retainer_legacy_start_date / retainer_current_start_date so charged = paid+snapshot = 0
+    charged = retainer_charged_to_date_ils(db, c)
+    assert charged == Decimal("0.00")
+
+
+def test_retainer_charged_theoretical_when_period_dates_set_and_no_payments(db: Session):
+    """When period dates (legacy) are set, retainer_charged_to_date_ils = theoretical even with no payments."""
+    c = _minimal_case(db, retainer_anchor_date=dt.date(2024, 7, 1))
     setattr(c, "retainer_legacy_start_date", dt.date(2024, 3, 1))
     setattr(c, "retainer_legacy_end_date", dt.date(2024, 3, 31))
     db.commit()
     db.refresh(c)
     charged = retainer_charged_to_date_ils(db, c)
-    assert charged == Decimal("0.00")
+    total_theoretical, _, _ = get_total_retainer_theoretical_ils(db, c)
+    assert charged == total_theoretical
+    assert total_theoretical > Decimal("0")
 
 
 def _minimal_case(db: Session, **kwargs) -> Case:

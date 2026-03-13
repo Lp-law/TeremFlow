@@ -2003,6 +2003,11 @@ function RetainerPanel({
       body.retainer_legacy_end_date = legacyEndDate || null
       const updated = await apiFetch<CaseOut>(`/cases/${caseId}/retainer/dates`, { method: 'PATCH', body: JSON.stringify(body) })
       await onCaseUpdated?.(updated)
+      const c = updated as { retainer_current_start_date?: string | null; retainer_current_end_date?: string | null; retainer_legacy_start_date?: string | null; retainer_legacy_end_date?: string | null }
+      setCurrentStartDate(c.retainer_current_start_date ? String(c.retainer_current_start_date).slice(0, 10) : '')
+      setCurrentEndDate(c.retainer_current_end_date ? String(c.retainer_current_end_date).slice(0, 10) : '')
+      setLegacyStartDate(c.retainer_legacy_start_date ? String(c.retainer_legacy_start_date).slice(0, 10) : '')
+      setLegacyEndDate(c.retainer_legacy_end_date ? String(c.retainer_legacy_end_date).slice(0, 10) : '')
       onRetainerChange?.()
       await load()
       onToast?.('תאריכים נשמרו')
