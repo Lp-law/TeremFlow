@@ -363,8 +363,11 @@ def get_retainer_period_months(case: Case) -> list[tuple[dt.date, str]]:
 
 
 def get_total_retainer_theoretical_ils(db: Session, case: Case) -> tuple[Decimal, Decimal, Decimal]:
-    """Returns (total, total_current, total_legacy). Source of truth for ledger and overview. 945+VAT per month."""
+    """One cumulative theoretical = current period + legacy period (same 945+VAT, different billing periods only).
+    Returns (total, total_current, total_legacy). Legacy = from period dates and/or from LEGACY payments (note).
+    No distinction for billing: both count as theoretical retainer."""
     period_months = get_retainer_period_months(case)
+    months_already_counted: set[dt.date] = {m for m, _ in period_months}
     total = Decimal("0.00")
     total_current = Decimal("0.00")
     total_legacy = Decimal("0.00")
@@ -375,6 +378,18 @@ def get_total_retainer_theoretical_ils(db: Session, case: Case) -> tuple[Decimal
             total_current += gross
         else:
             total_legacy += gross
+    # Include months from LEGACY payments (note starts with LEGACY) not already in period — same theoretical
+    payments = db.query(RetainerPayment).filter(RetainerPayment.case_id == case.id).all()
+    for p in payments:
+        if not is_legacy_note(p.note):
+            continue
+        month_first = _month_start(p.payment_date)
+        if month_first in months_already_counted:
+            continue
+        months_already_counted.add(month_first)
+        gross = retainer_gross_for_month(month_first)
+        total += gross
+        total_legacy += gross
     return (q_ils(total), q_ils(total_current), q_ils(total_legacy))
 
 
@@ -489,6 +504,13 @@ def build_retainer_ledger(db: Session, *, case_id: int) -> dict:
     period_months = get_retainer_period_months(case)
     month_strs = sorted({m.strftime("%Y-%m") for m, _ in period_months})
     month_to_date = {m.strftime("%Y-%m"): m for m, _ in period_months}
+    for p in payments:
+        if is_legacy_note(p.note):
+            m = _month_start(p.payment_date)
+            ms = m.strftime("%Y-%m")
+            if ms not in month_to_date:
+                month_to_date[ms] = m
+                month_strs = sorted(set(month_strs) | {ms})
     if snapshot_paid > 0 and snapshot_through is not None:
         snap_month = snapshot_through.strftime("%Y-%m")
         if snap_month not in month_strs:

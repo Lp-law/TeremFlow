@@ -2052,23 +2052,17 @@ function RetainerPanel({
   return (
     <div className="space-y-6 text-right">
       {error ? <div className="rounded-xl bg-amber-500/20 border border-amber-500/50 px-4 py-3 text-amber-800 dark:text-amber-200">{error}</div> : null}
-      {/* פנקס = מקור האמת לתיאורטי; סה״כ תאורטי = total_retainer_theoretical_ils_gross */}
+      {/* ריטיינר תאורטי = סכום מצטבר אחד (תקופה עדכנית + תקופת עבר — אותו חיוב, אין הבחנה) */}
       <div className="card-soft p-4">
         <div className="text-sm text-muted">סה״כ חודשי חיוב: <span className="font-semibold text-foreground">{chargedMonths}</span></div>
         {(() => {
           const theoreticalFromLedger = ledger?.total_retainer_theoretical_ils_gross != null ? toNumber(ledger.total_retainer_theoretical_ils_gross) : null
           const displayTheoretical = theoreticalFromLedger ?? retainerCharged
           return (
-            <>
-              <div className="text-xs text-muted mt-1">שכ״ט ששולם עד כה (תיאורטי): {displayTheoretical != null ? formatILS(displayTheoretical) : '—'}</div>
-              {ledger != null && (ledger.total_current_theoretical_ils != null || ledger.total_legacy_theoretical_ils != null) ? (
-                <div className="text-xs text-muted mt-1">
-                  סה״כ תאורטי – עדכני: {formatILS(toNumber(ledger.total_current_theoretical_ils ?? 0))}
-                  {' · '}LEGACY: {formatILS(toNumber(ledger.total_legacy_theoretical_ils ?? 0))}
-                  {' · '}ביחד: {formatILS(toNumber(ledger.total_retainer_theoretical_ils_gross ?? 0))}
-                </div>
-              ) : null}
-            </>
+            <div className="mt-1">
+              <div className="text-sm font-semibold">ריטיינר תאורטי (מצטבר): {displayTheoretical != null ? formatILS(displayTheoretical) : '—'}</div>
+              <div className="text-xs text-muted mt-0.5">שכ״ט ששולם עד כה (תיאורטי) — כולל תקופה עדכנית ותקופת עבר</div>
+            </div>
           )
         })()}
         {ledger != null ? (

@@ -176,6 +176,31 @@ def test_ledger_two_periods_overview_equals_ledger_total(db: Session):
     assert len(months_list) == 8
 
 
+def test_legacy_payments_count_as_theoretical_without_period_dates(db: Session):
+    """When legacy period dates are not set, LEGACY payments (note) still count as theoretical — one cumulative total."""
+    c = _minimal_case(db, retainer_anchor_date=dt.date(2024, 7, 1))
+    update_case_retainer_dates(
+        db, case_id=c.id, retainer_end_date=dt.date(2024, 9, 30), retainer_end_date_sent=True
+    )
+    db.refresh(c)
+    # No retainer_legacy_start_date; add LEGACY payments for Jan–Feb 2024
+    for month in (1, 2):
+        db.add(
+            RetainerPayment(
+                case_id=c.id,
+                payment_date=dt.date(2024, month, 1),
+                amount_ils_gross=Decimal("1105.65"),
+                note="LEGACY: past",
+            )
+        )
+    db.commit()
+    db.refresh(c)
+    charged = retainer_charged_to_date_ils(db, c)
+    monthly = retainer_gross_for_month(dt.date(2024, 7, 1))
+    expected = 3 * monthly + 2 * retainer_gross_for_month(dt.date(2024, 1, 1))  # 3 current + 2 from LEGACY payments
+    assert charged == expected
+
+
 def test_retainer_charged_to_date_ils_includes_legacy(db: Session):
     """retainer_charged_to_date_ils = current period + legacy period (from dates). 3 + 5 = 8 months."""
     c = _minimal_case(db, retainer_anchor_date=dt.date(2024, 7, 1))
