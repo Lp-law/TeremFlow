@@ -163,6 +163,38 @@ def test_clearing_end_date_works(db: Session):
     assert getattr(c, "retainer_end_date", None) is None
 
 
+def test_patch_period_end_dates_persist_and_ledger_reflects(db: Session):
+    """PATCH with retainer_current_end_date and retainer_legacy_end_date persists; GET case returns them; ledger months reflect end dates."""
+    c = _minimal_case(db, retainer_anchor_date=dt.date(2024, 1, 1))
+    update_case_retainer_dates(
+        db,
+        case_id=c.id,
+        retainer_current_start_date=dt.date(2024, 1, 1),
+        retainer_current_end_date=dt.date(2025, 6, 30),
+        retainer_legacy_start_date=dt.date(2023, 6, 1),
+        retainer_legacy_end_date=dt.date(2023, 12, 31),
+        current_start_sent=True,
+        current_end_sent=True,
+        legacy_start_sent=True,
+        legacy_end_sent=True,
+    )
+    c = db.query(Case).filter(Case.id == c.id).first()
+    assert c is not None
+    assert getattr(c, "retainer_current_start_date", None) == dt.date(2024, 1, 1)
+    assert getattr(c, "retainer_current_end_date", None) == dt.date(2025, 6, 30)
+    assert getattr(c, "retainer_end_date", None) == dt.date(2025, 6, 30)
+    assert getattr(c, "retainer_legacy_start_date", None) == dt.date(2023, 6, 1)
+    assert getattr(c, "retainer_legacy_end_date", None) == dt.date(2023, 12, 31)
+    data = build_retainer_ledger(db, case_id=c.id)
+    assert data is not None
+    month_strs = sorted([r["month"] for r in data["rows"]])
+    assert "2023-06" in month_strs
+    assert "2023-12" in month_strs
+    assert "2024-01" in month_strs
+    assert "2025-06" in month_strs
+    assert data["charged_months_count"] == len(month_strs)
+
+
 def test_ledger_february_payments_in_feb_paid_ils(db: Session):
     """Payments in February aggregate into February row only; no duplicate month row."""
     c = _minimal_case(db)

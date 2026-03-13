@@ -1914,9 +1914,6 @@ function RetainerPanel({
   const [snapshotMonth, setSnapshotMonth] = useState(
     caseItem.retainer_snapshot_through_month ? String(caseItem.retainer_snapshot_through_month).slice(0, 7) : ''
   )
-  const [retainerEndDate, setRetainerEndDate] = useState(
-    caseItem.retainer_end_date ? String(caseItem.retainer_end_date).slice(0, 10) : ''
-  )
   const [currentStartDate, setCurrentStartDate] = useState(
     (caseItem as { retainer_current_start_date?: string | null }).retainer_current_start_date?.slice(0, 10) ?? caseItem.retainer_anchor_date?.slice(0, 10) ?? ''
   )
@@ -1977,7 +1974,6 @@ function RetainerPanel({
   useEffect(() => {
     const anchor = caseItem.retainer_anchor_date?.slice(0, 10) ?? ''
     const snap = caseItem.retainer_snapshot_through_month ? String(caseItem.retainer_snapshot_through_month).slice(0, 7) : ''
-    const end = caseItem.retainer_end_date ? String(caseItem.retainer_end_date).slice(0, 10) : ''
     const c = caseItem as { retainer_current_start_date?: string | null; retainer_current_end_date?: string | null; retainer_legacy_start_date?: string | null; retainer_legacy_end_date?: string | null }
     const curStart = c.retainer_current_start_date?.slice(0, 10) ?? caseItem.retainer_anchor_date?.slice(0, 10) ?? ''
     const curEnd = c.retainer_current_end_date?.slice(0, 10) ?? caseItem.retainer_end_date?.slice(0, 10) ?? ''
@@ -1985,7 +1981,6 @@ function RetainerPanel({
     const legEnd = c.retainer_legacy_end_date?.slice(0, 10) ?? ''
     setAnchorDate(anchor)
     setSnapshotMonth(snap)
-    setRetainerEndDate(end)
     setCurrentStartDate(curStart)
     setCurrentEndDate(curEnd)
     setLegacyStartDate(legStart)
@@ -1997,23 +1992,22 @@ function RetainerPanel({
     setDatesSaveError(null)
     setDatesSaving(true)
     try {
-      const norm = (s: string) => (typeof s === 'string' && s.trim() ? s.trim() : null)
-      const curStart = norm(currentStartDate || anchorDate) ?? undefined
-      const curEnd = norm(currentEndDate || retainerEndDate)
-      const legStart = norm(legacyStartDate)
-      const legEnd = norm(legacyEndDate)
-      const payload = {
-        ...(curStart != null ? { retainer_anchor_date: curStart } : {}),
-        retainer_snapshot_through_month: snapshotMonth?.trim() ? `${snapshotMonth.trim()}-01` : undefined,
-        retainer_end_date: curEnd,
+      const normDate = (s: string | null | undefined) => (s != null && typeof s === 'string' && s.trim() ? s.trim() : null)
+      const curStart = normDate(currentStartDate) ?? normDate(anchorDate) ?? undefined
+      const curEnd = normDate(currentEndDate)
+      const legStart = normDate(legacyStartDate)
+      const legEnd = normDate(legacyEndDate)
+      const payload: Record<string, string | null | undefined> = {
         retainer_current_start_date: curStart ?? null,
         retainer_current_end_date: curEnd,
         retainer_legacy_start_date: legStart,
         retainer_legacy_end_date: legEnd,
       }
-      console.log('[debug] retainer dates payload', payload)
-      const updated = await apiFetch<CaseOut>(`/cases/${caseId}/retainer/dates`, { method: 'PATCH', body: JSON.stringify(payload) })
-      console.log('[debug] retainer dates response', updated)
+      if (curStart != null) payload.retainer_anchor_date = curStart
+      if (snapshotMonth?.trim()) payload.retainer_snapshot_through_month = `${snapshotMonth.trim()}-01`
+      payload.retainer_end_date = curEnd
+      const body = JSON.stringify(payload)
+      const updated = await apiFetch<CaseOut>(`/cases/${caseId}/retainer/dates`, { method: 'PATCH', body })
       const c = updated as { retainer_current_start_date?: string | null; retainer_current_end_date?: string | null; retainer_legacy_start_date?: string | null; retainer_legacy_end_date?: string | null }
       setCurrentStartDate(c.retainer_current_start_date ? String(c.retainer_current_start_date).slice(0, 10) : '')
       setCurrentEndDate(c.retainer_current_end_date ? String(c.retainer_current_end_date).slice(0, 10) : '')
@@ -2095,7 +2089,7 @@ function RetainerPanel({
           <input
             type="date"
             className="input py-2 w-40"
-            value={currentStartDate}
+            value={currentStartDate ?? ''}
             onChange={(e) => setCurrentStartDate(e.target.value)}
             aria-label="תאריך התחלה ריטיינר עדכני"
           />
@@ -2103,7 +2097,7 @@ function RetainerPanel({
           <input
             type="date"
             className="input py-2 w-40"
-            value={currentEndDate}
+            value={currentEndDate ?? ''}
             onChange={(e) => setCurrentEndDate(e.target.value)}
             aria-label="תאריך סיום ריטיינר עדכני"
           />
@@ -2120,7 +2114,7 @@ function RetainerPanel({
           <input
             type="date"
             className="input py-2 w-40"
-            value={legacyStartDate}
+            value={legacyStartDate ?? ''}
             onChange={(e) => setLegacyStartDate(e.target.value)}
             aria-label="תאריך התחלה ריטיינר LEGACY"
           />
@@ -2128,7 +2122,7 @@ function RetainerPanel({
           <input
             type="date"
             className="input py-2 w-40"
-            value={legacyEndDate}
+            value={legacyEndDate ?? ''}
             onChange={(e) => setLegacyEndDate(e.target.value)}
             aria-label="תאריך סיום ריטיינר LEGACY"
           />
