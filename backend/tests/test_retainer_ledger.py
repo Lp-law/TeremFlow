@@ -70,8 +70,10 @@ def _minimal_case(db: Session, **kwargs) -> Case:
 
 
 def test_retainer_ledger_includes_manual_payments_and_totals(db: Session):
-    """Ledger has one row per month; payments in same month are aggregated into that month's paid_ils."""
+    """Ledger rows follow typed period dates; payments in those months show in paid_ils."""
     c = _minimal_case(db)
+    setattr(c, "retainer_legacy_start_date", dt.date(2024, 3, 1))
+    setattr(c, "retainer_legacy_end_date", dt.date(2024, 4, 30))
     db.add(
         RetainerPayment(
             case_id=c.id,

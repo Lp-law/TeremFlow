@@ -515,7 +515,7 @@ def build_retainer_ledger(db: Session, *, case_id: int) -> dict:
         snap_month = snapshot_through.strftime("%Y-%m")
         if snap_month not in month_strs:
             month_strs = sorted(set(month_strs) | {snap_month})
-    month_strs = sorted(set(month_strs) | set(paid_by_month.keys()))
+    # Do not add months from paid_by_month: list is strictly from typed period dates (current + legacy)
 
     rows = []
     running = Decimal("0.00")
