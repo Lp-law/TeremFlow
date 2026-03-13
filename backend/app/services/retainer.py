@@ -442,6 +442,9 @@ def _ledger_payments_only(db: Session, *, case_id: int) -> dict:
         "total_retainer_theoretical_ils_gross": Decimal("0"),
         "total_current_theoretical_ils": Decimal("0"),
         "total_legacy_theoretical_ils": Decimal("0"),
+        "total_theoretical_ils_gross": Decimal("0"),
+        "total_paid_ils_gross": summary["retainer_paid_total_ils_gross"],
+        "total_credit_ils_gross": summary["retainer_credit_balance_ils_gross"],
         "rows": rows,
     }
 
@@ -541,6 +544,7 @@ def build_retainer_ledger(db: Session, *, case_id: int) -> dict:
 
     charged_months_count = len(month_strs)
     total_paid_ils = q_ils(summary["retainer_paid_total_ils_gross"] + snapshot_paid)
+    payments_only = summary["retainer_paid_total_ils_gross"]
     total_accrued_ils = q_ils(sum(r["accrued_ils"] for r in rows))
     total_theoretical, total_current_theoretical, total_legacy_theoretical = get_total_retainer_theoretical_ils(db, case)
     display_anchor = (current_start or anchor or case.open_date)
@@ -556,6 +560,9 @@ def build_retainer_ledger(db: Session, *, case_id: int) -> dict:
         "total_retainer_theoretical_ils_gross": total_theoretical,
         "total_current_theoretical_ils": total_current_theoretical,
         "total_legacy_theoretical_ils": total_legacy_theoretical,
+        "total_theoretical_ils_gross": total_theoretical,
+        "total_paid_ils_gross": payments_only,
+        "total_credit_ils_gross": current_credit,
         "rows": rows,
     }
 

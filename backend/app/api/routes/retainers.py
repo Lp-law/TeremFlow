@@ -198,9 +198,22 @@ async def update_retainer_dates(
     body = await request.json()
     payload = RetainerDatesUpdate.model_validate(body)
     updates = payload.model_dump(exclude_unset=True)
-    # Prefer raw body for “key present” so we never drop legacy_end when client sends it
     def sent(key: str) -> bool:
         return key in body
+    cur_start = _parse_date(body.get("retainer_current_start_date")) if sent("retainer_current_start_date") else None
+    cur_end = _parse_date(body.get("retainer_current_end_date")) if sent("retainer_current_end_date") else None
+    leg_start = _parse_date(body.get("retainer_legacy_start_date")) if sent("retainer_legacy_start_date") else None
+    leg_end = _parse_date(body.get("retainer_legacy_end_date")) if sent("retainer_legacy_end_date") else None
+    if cur_start is not None and cur_end is not None and cur_end < cur_start:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="תאריך סיום ריטיינר עדכני חייב להיות אחרי או שווה לתאריך ההתחלה",
+        )
+    if leg_start is not None and leg_end is not None and leg_end < leg_start:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="תאריך סיום ריטיינר עבר (LEGACY) חייב להיות אחרי או שווה לתאריך ההתחלה",
+        )
     c = case_service.update_case_retainer_dates(
         db,
         case_id=case_id,
@@ -208,10 +221,10 @@ async def update_retainer_dates(
         retainer_snapshot_through_month=_parse_date(updates.get("retainer_snapshot_through_month")) if "retainer_snapshot_through_month" in updates else None,
         retainer_end_date=_parse_date(body.get("retainer_end_date")) if sent("retainer_end_date") else None,
         retainer_end_date_sent=sent("retainer_end_date"),
-        retainer_current_start_date=_parse_date(body.get("retainer_current_start_date")) if sent("retainer_current_start_date") else None,
-        retainer_current_end_date=_parse_date(body.get("retainer_current_end_date")) if sent("retainer_current_end_date") else None,
-        retainer_legacy_start_date=_parse_date(body.get("retainer_legacy_start_date")) if sent("retainer_legacy_start_date") else None,
-        retainer_legacy_end_date=_parse_date(body.get("retainer_legacy_end_date")) if sent("retainer_legacy_end_date") else None,
+        retainer_current_start_date=cur_start,
+        retainer_current_end_date=cur_end,
+        retainer_legacy_start_date=leg_start,
+        retainer_legacy_end_date=leg_end,
         current_start_sent=sent("retainer_current_start_date"),
         current_end_sent=sent("retainer_current_end_date"),
         legacy_start_sent=sent("retainer_legacy_start_date"),

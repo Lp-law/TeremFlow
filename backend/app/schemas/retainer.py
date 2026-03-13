@@ -81,11 +81,15 @@ class RetainerLedgerOut(BaseModel):
     snapshot_paid_ils: Decimal
     current_credit_ils: Decimal
     charged_months_count: int
-    retainer_paid_total_ils_gross: Decimal  # total paid (payments)
+    retainer_paid_total_ils_gross: Decimal  # total paid (payments + snapshot) for backward compat
     total_accrued_ils: Decimal  # sum of accrued in rows
     total_retainer_theoretical_ils_gross: Decimal = Decimal("0")  # source of truth: months × 945+VAT
     total_current_theoretical_ils: Decimal = Decimal("0")
     total_legacy_theoretical_ils: Decimal = Decimal("0")
+    # Explicit single-source-of-truth totals for UI (same aggregation as rows)
+    total_theoretical_ils_gross: Decimal = Decimal("0")  # = total_retainer_theoretical_ils_gross
+    total_paid_ils_gross: Decimal = Decimal("0")  # sum of retainer_payments only (no snapshot)
+    total_credit_ils_gross: Decimal = Decimal("0")  # = current_credit_ils (running balance)
     rows: list[RetainerLedgerRow]
 
 

@@ -230,15 +230,16 @@ def fee_diff_ils(db: Session, case: Case) -> Decimal:
 
 
 def get_unified_summary(db: Session, case: Case) -> dict[str, Any]:
-    """Unified values for overview/deductible/export. retainer_charged_to_date_ils = סה״כ ריטיינר ששולם (כולל ידני) from ledger."""
+    """Unified values for overview/deductible/export. retainer_charged_to_date_ils = consumed (override or paid/theoretical). retainer_theoretical_ils = ledger total_theoretical (single source of truth for overview display)."""
     overrides = _safe_overrides(case)
     override_total = _parse_override_to_decimal(overrides.get("retainer_charged_override"))
     from app.services.retainer import _sum_payments, get_total_retainer_theoretical_ils
     paid_total = _sum_payments(db, case.id)
     total = override_total if override_total is not None else paid_total
-    _, total_current, total_legacy = get_total_retainer_theoretical_ils(db, case)
+    total_theoretical, total_current, total_legacy = get_total_retainer_theoretical_ils(db, case)
     return {
         "retainer_charged_to_date_ils": total,
+        "retainer_theoretical_ils": total_theoretical,
         "retainer_regular_theoretical_ils": total_current,
         "retainer_legacy_theoretical_ils": total_legacy,
         "fees_by_stages_ils": fees_by_stages_ils(db, case),

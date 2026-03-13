@@ -112,6 +112,8 @@ export type CaseOverviewSummary = {
   }
   retainer: {
     retainer_charged_to_date_ils: string | number
+    /** Total theoretical from ledger — same as total_theoretical_ils_gross (single source for overview) */
+    retainer_theoretical_ils?: string | number
     retainer_regular_theoretical_ils?: string | number
     retainer_legacy_theoretical_ils?: string | number
     charged_months_count: number
@@ -187,10 +189,13 @@ export type RetainerLedger = {
   charged_months_count: number
   retainer_paid_total_ils_gross: string | number
   total_accrued_ils?: string | number
-  /** Source of truth: theoretical total (months × 945+VAT) */
   total_retainer_theoretical_ils_gross?: string | number
   total_current_theoretical_ils?: string | number
   total_legacy_theoretical_ils?: string | number
+  /** Single source of truth for UI (same aggregation as rows) */
+  total_theoretical_ils_gross?: string | number
+  total_paid_ils_gross?: string | number
+  total_credit_ils_gross?: string | number
   rows: RetainerLedgerRow[]
 }
 
