@@ -13,7 +13,8 @@ services:
     plan: free
     rootDir: backend
     buildCommand: pip install -r requirements.txt
-    startCommand: bash start.sh
+    preDeployCommand: bash -c "alembic upgrade head && python -c \"from app.db.session import SessionLocal; from app.db.init_db import ensure_seeded; db=SessionLocal(); ensure_seeded(db); db.close()\""
+    startCommand: bash -c 'exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}'
     envVars:
       - key: DATABASE_URL
         fromDatabase:
