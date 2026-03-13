@@ -11,6 +11,7 @@ const CaseDetailsPage = lazy(() => import('./pages/CaseDetailsPage').then((m) =>
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage').then((m) => ({ default: m.AnalyticsPage })))
 const ImportPage = lazy(() => import('./pages/ImportPage').then((m) => ({ default: m.ImportPage })))
 const NotificationsPage = lazy(() => import('./pages/NotificationsPage').then((m) => ({ default: m.NotificationsPage })))
+const ClientReportPage = lazy(() => import('./pages/ClientReportPage').then((m) => ({ default: m.ClientReportPage })))
 
 function HomeRedirect() {
   const { user, isLoading } = useAuth()
@@ -22,11 +23,11 @@ function AppContent() {
   const { user } = useAuth()
   const location = useLocation()
   const pathname = location.pathname
-  const showBackToCases = pathname !== '/dashboard' && pathname !== '/cases'
+  const showNav = user && pathname !== '/dashboard' && pathname !== '/login'
   return (
     <div className="min-h-screen flex flex-col">
       <main className="flex-1">
-        {user && showBackToCases ? <BackToCasesButton /> : null}
+        {showNav ? <BackToCasesButton /> : null}
         <Suspense fallback={<div className="min-h-screen w-full px-6 py-10 text-right text-sm text-muted">טוען...</div>}>
           <Routes>
             <Route path="/" element={<HomeRedirect />} />
@@ -76,6 +77,14 @@ function AppContent() {
               element={
                 <RequireAuth>
                   <NotificationsPage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/dashboard/client-report"
+              element={
+                <RequireAuth>
+                  <ClientReportPage />
                 </RequireAuth>
               }
             />
