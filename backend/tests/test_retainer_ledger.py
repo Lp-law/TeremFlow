@@ -149,6 +149,39 @@ def test_charged_months_anchor_jan_end_feb_two_months(db: Session):
     assert charged_months_count(c) == 2
 
 
+def test_effective_end_date_respects_freeze(db: Session):
+    """When retainer_is_frozen and retainer_frozen_at set, get_effective_end_date returns frozen_at (capped by today/end_date)."""
+    c = _minimal_case(db, retainer_anchor_date=dt.date(2024, 1, 1))
+    setattr(c, "retainer_current_start_date", dt.date(2024, 1, 1))
+    setattr(c, "retainer_is_frozen", True)
+    setattr(c, "retainer_frozen_at", dt.date(2025, 3, 15))
+    db.commit()
+    db.refresh(c)
+    assert get_effective_end_date(c) == dt.date(2025, 3, 15)
+
+
+def test_ledger_stops_at_frozen_at(db: Session):
+    """With current_start and freeze at 2025-02-15, ledger last month is 2025-02 (no months after frozen_at)."""
+    c = _minimal_case(db, retainer_anchor_date=dt.date(2024, 1, 1))
+    update_case_retainer_dates(
+        db,
+        case_id=c.id,
+        retainer_current_start_date=dt.date(2024, 1, 1),
+        current_start_sent=True,
+    )
+    c = db.query(Case).filter(Case.id == c.id).first()
+    assert c is not None
+    c.retainer_is_frozen = True
+    c.retainer_frozen_at = dt.date(2025, 2, 15)
+    db.commit()
+    db.refresh(c)
+    data = build_retainer_ledger(db, case_id=c.id)
+    assert data is not None
+    month_strs = sorted([r["month"] for r in data["rows"]])
+    last_month = month_strs[-1] if month_strs else None
+    assert last_month == "2025-02", f"Ledger last month {last_month} should be 2025-02 when frozen_at=2025-02-15"
+
+
 def test_clearing_end_date_works(db: Session):
     """PATCH retainer dates with retainer_end_date=null clears it; effective_end becomes today (or frozen)."""
     c = _minimal_case(db)

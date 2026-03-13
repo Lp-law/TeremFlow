@@ -2027,11 +2027,11 @@ function RetainerPanel({
   async function toggleFreeze() {
     setFreezeSaving(true)
     try {
-      await apiFetch(`/cases/${caseId}/retainer/freeze`, {
+      const updated = await apiFetch<CaseOut>(`/cases/${caseId}/retainer/freeze`, {
         method: 'POST',
         body: JSON.stringify({ freeze: !isFrozen }),
       })
-      await onCaseUpdated?.()
+      await onCaseUpdated?.(updated)
       onRetainerChange?.()
       await load()
       onToast?.(isFrozen ? 'הקפאה בוטלה' : 'ריטיינר הוקפא')
