@@ -102,6 +102,8 @@ export function CaseDetailsPage() {
   type ModalKind = 'expense' | 'retainerPayment' | 'retainerLegacyRange' | 'stageBilling' | 'notes'
   const [activeModal, setActiveModal] = useState<ModalKind | null>(null)
   const [retainerReloadKey, setRetainerReloadKey] = useState(0)
+  /** Once user opens Retainer tab, keep panel mounted (hidden when inactive) so typed dates are not lost on tab switch */
+  const [retainerTabEverOpened, setRetainerTabEverOpened] = useState(false)
   const [feesReloadKey, setFeesReloadKey] = useState(0)
 
   const [feeEvents, setFeeEvents] = useState<FeeEvent[]>([])
@@ -119,6 +121,10 @@ export function CaseDetailsPage() {
       }
     }
   }, [activeModal])
+
+  useEffect(() => {
+    if (tab === 'retainer') setRetainerTabEverOpened(true)
+  }, [tab])
 
   async function load() {
     setError(null)
@@ -315,21 +321,23 @@ export function CaseDetailsPage() {
                 />
               ) : null}
 
-              {tab === 'retainer' ? (
-                <RetainerPanel
-                  caseId={caseItem.id}
-                  caseItem={caseItem}
-                  isAdmin={isAdmin}
-                  onOpenAddPayment={() => setActiveModal('retainerPayment')}
-                  onOpenLegacyRange={() => setActiveModal('retainerLegacyRange')}
-                  retainerReloadKey={retainerReloadKey}
-                  onRetainerChange={() => setRefreshOverviewDeductibleKey((k) => k + 1)}
-                  onCaseUpdated={(updated) => { if (updated != null) setCaseItem(updated); else load(); }}
-                  onToast={(msg) => {
-                    setToast(msg)
-                    setTimeout(() => setToast(null), 4000)
-                  }}
-                />
+              {(retainerTabEverOpened || tab === 'retainer') ? (
+                <div style={{ display: tab === 'retainer' ? 'block' : 'none' }}>
+                  <RetainerPanel
+                    caseId={caseItem.id}
+                    caseItem={caseItem}
+                    isAdmin={isAdmin}
+                    onOpenAddPayment={() => setActiveModal('retainerPayment')}
+                    onOpenLegacyRange={() => setActiveModal('retainerLegacyRange')}
+                    retainerReloadKey={retainerReloadKey}
+                    onRetainerChange={() => setRefreshOverviewDeductibleKey((k) => k + 1)}
+                    onCaseUpdated={(updated) => { if (updated != null) setCaseItem(updated); else load(); }}
+                    onToast={(msg) => {
+                      setToast(msg)
+                      setTimeout(() => setToast(null), 4000)
+                    }}
+                  />
+                </div>
               ) : null}
               {tab === 'fees' ? (
                 <FeesPanel
