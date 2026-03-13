@@ -16,7 +16,7 @@ class FeesOverview(BaseModel):
 
 
 class RetainerOverview(BaseModel):
-    retainer_charged_to_date_ils: Decimal = Decimal("0.00")  # total = regular + legacy
+    retainer_charged_to_date_ils: Decimal = Decimal("0.00")  # סה״כ ריטיינר ששולם (כולל ידני) = sum of payments
     retainer_regular_theoretical_ils: Decimal = Decimal("0.00")
     retainer_legacy_theoretical_ils: Decimal = Decimal("0.00")
     charged_months_count: int = 0

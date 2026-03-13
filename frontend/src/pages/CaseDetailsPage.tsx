@@ -771,7 +771,7 @@ function OverviewTab({
               <h3 className="text-sm font-semibold text-muted mb-3">תמונת מצב כספית</h3>
               <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div className="card-soft p-4">
-                  <dt className="text-xs text-muted">שכ״ט ששולם עד כה (תיאורטי)</dt>
+                  <dt className="text-xs text-muted">שכ״ט ששולם עד כה (כולל ידני)</dt>
                   <dd className="mt-1 font-semibold">{formatILS(overview.retainer.retainer_charged_to_date_ils)}</dd>
                 </div>
                 <div className="card-soft p-4">
@@ -2056,18 +2056,17 @@ function RetainerPanel({
       <div className="card-soft p-4">
         <div className="text-sm text-muted">סה״כ חודשי חיוב: <span className="font-semibold text-foreground">{chargedMonths}</span></div>
         {(() => {
-          const theoreticalFromLedger = ledger?.total_retainer_theoretical_ils_gross != null ? toNumber(ledger.total_retainer_theoretical_ils_gross) : null
-          const displayTheoretical = theoreticalFromLedger ?? retainerCharged
+          const displayPaid = retainerPaidTotal ?? retainerCharged
           return (
             <div className="mt-1">
-              <div className="text-sm font-semibold">ריטיינר תאורטי (מצטבר): {displayTheoretical != null ? formatILS(displayTheoretical) : '—'}</div>
-              <div className="text-xs text-muted mt-0.5">שכ״ט ששולם עד כה (תיאורטי) — כולל תקופה עדכנית ותקופת עבר</div>
+              <div className="text-sm font-semibold">סה״כ ריטיינר ששולם (כולל ידני): {displayPaid != null ? formatILS(displayPaid) : '—'}</div>
+              <div className="text-xs text-muted mt-0.5">סכום קובע — זהה לסקירה וליתר המסכים</div>
             </div>
           )
         })()}
         {ledger != null ? (
           <>
-            <div className="text-sm text-muted mt-2 pt-2 border-t border-border/40">פנקס — תשלומים (paid): <span className="font-semibold text-foreground">{formatILS(retainerPaidTotal ?? 0)}</span></div>
+            <div className="text-sm text-muted mt-2 pt-2 border-t border-border/40">סך תשלומים (paid): <span className="font-semibold text-foreground">{formatILS(retainerPaidTotal ?? 0)}</span></div>
             {ledgerAccruedTotal != null ? <div className="text-sm text-muted mt-1">סך נצבר: <span className="font-semibold text-foreground">{formatILS(ledgerAccruedTotal)}</span></div> : null}
             {ledgerCredit != null ? <div className="text-sm text-muted mt-1">יתרת קרדיט: <span className="font-semibold text-foreground">{formatILS(ledgerCredit)}</span></div> : null}
           </>

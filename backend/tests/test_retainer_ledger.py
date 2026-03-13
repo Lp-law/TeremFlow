@@ -21,8 +21,8 @@ from app.services.unified import (
 )
 
 
-def test_legacy_theoretical_by_period_dates(db: Session):
-    """Theoretical = current period + legacy period from dates (months × 945+VAT)."""
+def test_retainer_charged_zero_when_no_payments(db: Session):
+    """retainer_charged_to_date_ils = sum of payments; no payments → 0."""
     c = _minimal_case(db, retainer_anchor_date=dt.date(2024, 7, 1))
     update_case_retainer_dates(
         db, case_id=c.id, retainer_end_date=dt.date(2024, 9, 30), retainer_end_date_sent=True
@@ -33,9 +33,7 @@ def test_legacy_theoretical_by_period_dates(db: Session):
     db.commit()
     db.refresh(c)
     charged = retainer_charged_to_date_ils(db, c)
-    monthly = retainer_gross_for_month(dt.date(2024, 7, 1))
-    expected = 3 * monthly + retainer_gross_for_month(dt.date(2024, 3, 1))  # 3 current + 1 legacy month
-    assert charged == expected
+    assert charged == Decimal("0.00")
 
 
 def _minimal_case(db: Session, **kwargs) -> Case:
@@ -151,39 +149,29 @@ def test_ledger_february_payments_in_feb_paid_ils(db: Session):
     assert feb_rows[0]["paid_ils"] == Decimal("800.00")
 
 
-def test_ledger_two_periods_overview_equals_ledger_total(db: Session):
-    """Legacy 2024-01..2024-06 (6 months) + current 2026-01..2026-02 (2 months). Ledger total = overview retainer_charged."""
+def test_ledger_paid_total_equals_overview_retainer_charged(db: Session):
+    """retainer_charged_to_date_ils = סה״כ ריטיינר ששולם (כולל ידני) — must match ledger retainer_paid_total_ils_gross."""
     c = _minimal_case(db, retainer_anchor_date=dt.date(2026, 1, 1))
-    setattr(c, "retainer_current_start_date", dt.date(2026, 1, 1))
-    setattr(c, "retainer_current_end_date", dt.date(2026, 2, 28))
-    setattr(c, "retainer_legacy_start_date", dt.date(2024, 1, 1))
-    setattr(c, "retainer_legacy_end_date", dt.date(2024, 6, 30))
+    db.add(RetainerPayment(case_id=c.id, payment_date=dt.date(2024, 1, 1), amount_ils_gross=Decimal("1105.65"), note="LEGACY"))
+    db.add(RetainerPayment(case_id=c.id, payment_date=dt.date(2026, 2, 1), amount_ils_gross=Decimal("1115.10"), note=None))
     db.commit()
     db.refresh(c)
     data = build_retainer_ledger(db, case_id=c.id)
     assert data is not None
-    total_ledger = data.get("total_retainer_theoretical_ils_gross")
-    assert total_ledger is not None
+    paid_ledger = data.get("retainer_paid_total_ils_gross")
+    assert paid_ledger is not None
     charged = retainer_charged_to_date_ils(db, c)
-    assert charged == total_ledger
-    # 6 months 2024 @ 1105.65 + 2 months 2026 @ 1115.10
-    expected_2024 = 6 * retainer_gross_for_month(dt.date(2024, 1, 1))
-    expected_2026 = 2 * retainer_gross_for_month(dt.date(2026, 1, 1))
-    assert total_ledger == expected_2024 + expected_2026
-    months_list = sorted({r["month"] for r in data["rows"]})
-    assert "2024-01" in months_list and "2024-06" in months_list
-    assert "2026-01" in months_list and "2026-02" in months_list
-    assert len(months_list) == 8
+    assert charged == paid_ledger
+    assert charged == Decimal("2220.75")
 
 
-def test_legacy_payments_count_as_theoretical_without_period_dates(db: Session):
-    """When legacy period dates are not set, LEGACY payments (note) still count as theoretical — one cumulative total."""
+def test_retainer_charged_equals_sum_of_payments(db: Session):
+    """retainer_charged_to_date_ils = סה״כ ריטיינר ששולם (כולל ידני) = sum of all retainer payments."""
     c = _minimal_case(db, retainer_anchor_date=dt.date(2024, 7, 1))
     update_case_retainer_dates(
         db, case_id=c.id, retainer_end_date=dt.date(2024, 9, 30), retainer_end_date_sent=True
     )
     db.refresh(c)
-    # No retainer_legacy_start_date; add LEGACY payments for Jan–Feb 2024
     for month in (1, 2):
         db.add(
             RetainerPayment(
@@ -196,24 +184,24 @@ def test_legacy_payments_count_as_theoretical_without_period_dates(db: Session):
     db.commit()
     db.refresh(c)
     charged = retainer_charged_to_date_ils(db, c)
-    monthly = retainer_gross_for_month(dt.date(2024, 7, 1))
-    expected = 3 * monthly + 2 * retainer_gross_for_month(dt.date(2024, 1, 1))  # 3 current + 2 from LEGACY payments
-    assert charged == expected
+    assert charged == Decimal("2211.30")  # 2 × 1105.65
 
 
-def test_retainer_charged_to_date_ils_includes_legacy(db: Session):
-    """retainer_charged_to_date_ils = current period + legacy period (from dates). 3 + 5 = 8 months."""
+def test_retainer_charged_equals_paid_total_eight_payments(db: Session):
+    """retainer_charged_to_date_ils = sum of payments. Add 8 payments → charged = 8 × 1105.65."""
     c = _minimal_case(db, retainer_anchor_date=dt.date(2024, 7, 1))
     update_case_retainer_dates(
         db, case_id=c.id, retainer_end_date=dt.date(2024, 9, 30), retainer_end_date_sent=True
     )
     db.refresh(c)
-    # Set legacy period: Jan–May 2024 (5 months). Source of truth = period dates, not payments.
     setattr(c, "retainer_legacy_start_date", dt.date(2024, 1, 1))
     setattr(c, "retainer_legacy_end_date", dt.date(2024, 5, 31))
     db.commit()
     db.refresh(c)
     monthly_2024 = retainer_gross_for_month(dt.date(2024, 7, 1))  # 1105.65
+    for m in (1, 2, 3, 4, 5, 7, 8, 9):
+        db.add(RetainerPayment(case_id=c.id, payment_date=dt.date(2024, m, 1), amount_ils_gross=monthly_2024, note="pay" if m >= 7 else "LEGACY"))
+    db.commit()
+    db.refresh(c)
     charged = retainer_charged_to_date_ils(db, c)
-    expected = 8 * monthly_2024  # 3 current (Jul–Sep) + 5 legacy (Jan–May)
-    assert charged == expected
+    assert charged == 8 * monthly_2024

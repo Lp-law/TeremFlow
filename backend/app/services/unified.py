@@ -134,16 +134,15 @@ def _regular_retainer_theoretical_ils(db: Session, case: Case) -> Decimal:
 
 
 def retainer_charged_to_date_ils(db: Session, case: Case) -> Decimal:
-    """Theoretical retainer = ledger source of truth (current + legacy periods, months × 945+VAT).
+    """סכום קובע = סה״כ הריטיינר ששולם (כולל ידני) מהפנקס — sum of all retainer payments for this case.
     Override retainer_charged_override replaces the total if set.
     """
     overrides = _safe_overrides(case)
     parsed = _parse_override_to_decimal(overrides.get("retainer_charged_override"))
     if parsed is not None:
         return parsed
-    from app.services.retainer import get_total_retainer_theoretical_ils
-    total, _c, _l = get_total_retainer_theoretical_ils(db, case)
-    return total
+    from app.services.retainer import _sum_payments
+    return _sum_payments(db, case.id)
 
 
 def fees_by_stages_ils(db: Session, case: Case) -> Decimal:
@@ -219,12 +218,13 @@ def fee_diff_ils(db: Session, case: Case) -> Decimal:
 
 
 def get_unified_summary(db: Session, case: Case) -> dict[str, Any]:
-    """All unified values for overview/deductible tab/export. Ledger is source of truth for retainer total."""
+    """Unified values for overview/deductible/export. retainer_charged_to_date_ils = סה״כ ריטיינר ששולם (כולל ידני) from ledger."""
     overrides = _safe_overrides(case)
     override_total = _parse_override_to_decimal(overrides.get("retainer_charged_override"))
-    from app.services.retainer import get_total_retainer_theoretical_ils
-    total, total_current, total_legacy = get_total_retainer_theoretical_ils(db, case)
-    total = override_total if override_total is not None else total
+    from app.services.retainer import _sum_payments, get_total_retainer_theoretical_ils
+    paid_total = _sum_payments(db, case.id)
+    total = override_total if override_total is not None else paid_total
+    _, total_current, total_legacy = get_total_retainer_theoretical_ils(db, case)
     return {
         "retainer_charged_to_date_ils": total,
         "retainer_regular_theoretical_ils": total_current,
