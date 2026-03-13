@@ -20,10 +20,14 @@ class RetainerFreezeRequest(BaseModel):
 
 
 class RetainerDatesUpdate(BaseModel):
-    """Update retainer_anchor_date, retainer_snapshot_through_month (YYYY-MM-01), and/or retainer_end_date."""
+    """Update retainer dates and/or two periods: current + legacy (start/end). Send null to clear."""
     retainer_anchor_date: dt.date | None = None
-    retainer_snapshot_through_month: dt.date | None = None  # Normalized to first-of-month in service
-    retainer_end_date: dt.date | None = None  # Stop retainer charging after this date
+    retainer_snapshot_through_month: dt.date | None = None  # YYYY-MM-01
+    retainer_end_date: dt.date | None = None  # current period end (alias)
+    retainer_current_start_date: dt.date | None = None
+    retainer_current_end_date: dt.date | None = None
+    retainer_legacy_start_date: dt.date | None = None
+    retainer_legacy_end_date: dt.date | None = None
 
 
 class RetainerPaymentCreate(BaseModel):
@@ -77,8 +81,11 @@ class RetainerLedgerOut(BaseModel):
     snapshot_paid_ils: Decimal
     current_credit_ils: Decimal
     charged_months_count: int
-    retainer_paid_total_ils_gross: Decimal  # total_paid_ils: sum of all payments (includes manual)
-    total_accrued_ils: Decimal  # sum of accrued in rows (theoretical to effective_end)
+    retainer_paid_total_ils_gross: Decimal  # total paid (payments)
+    total_accrued_ils: Decimal  # sum of accrued in rows
+    total_retainer_theoretical_ils_gross: Decimal = Decimal("0")  # source of truth: months × 945+VAT
+    total_current_theoretical_ils: Decimal = Decimal("0")
+    total_legacy_theoretical_ils: Decimal = Decimal("0")
     rows: list[RetainerLedgerRow]
 
 

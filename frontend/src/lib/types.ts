@@ -53,6 +53,10 @@ export type CaseOut = {
   retainer_is_frozen?: boolean
   retainer_frozen_at?: string | null
   retainer_end_date?: string | null
+  retainer_current_start_date?: string | null
+  retainer_current_end_date?: string | null
+  retainer_legacy_start_date?: string | null
+  retainer_legacy_end_date?: string | null
   case_notes?: string | null
   insurer_started: boolean
   insurer_start_date: string | null
@@ -183,6 +187,10 @@ export type RetainerLedger = {
   charged_months_count: number
   retainer_paid_total_ils_gross: string | number
   total_accrued_ils?: string | number
+  /** Source of truth: theoretical total (months × 945+VAT) */
+  total_retainer_theoretical_ils_gross?: string | number
+  total_current_theoretical_ils?: string | number
+  total_legacy_theoretical_ils?: string | number
   rows: RetainerLedgerRow[]
 }
 

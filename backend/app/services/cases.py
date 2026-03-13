@@ -259,8 +259,16 @@ def update_case_retainer_dates(
     retainer_snapshot_through_month: dt.date | None = None,
     retainer_end_date: dt.date | None = None,
     retainer_end_date_sent: bool = False,
+    retainer_current_start_date: dt.date | None = None,
+    retainer_current_end_date: dt.date | None = None,
+    retainer_legacy_start_date: dt.date | None = None,
+    retainer_legacy_end_date: dt.date | None = None,
+    current_start_sent: bool = False,
+    current_end_sent: bool = False,
+    legacy_start_sent: bool = False,
+    legacy_end_sent: bool = False,
 ) -> Case:
-    """Update retainer_anchor_date, retainer_snapshot_through_month, and/or retainer_end_date. Set retainer_end_date_sent=True with retainer_end_date=None to clear."""
+    """Update retainer dates and/or current/legacy period dates. Send null to clear."""
     from app.services.unified import get_effective_end_date
 
     c = get_case_if_not_deleted(db, case_id)
@@ -277,19 +285,28 @@ def update_case_retainer_dates(
         c.retainer_snapshot_through_month = first
     if retainer_end_date_sent:
         c.retainer_end_date = retainer_end_date
+    if current_start_sent:
+        c.retainer_current_start_date = retainer_current_start_date
+    if current_end_sent:
+        c.retainer_current_end_date = retainer_current_end_date
+    if legacy_start_sent:
+        c.retainer_legacy_start_date = retainer_legacy_start_date
+    if legacy_end_sent:
+        c.retainer_legacy_end_date = retainer_legacy_end_date
     db.commit()
     db.refresh(c)
-    # Ensure accruals exist up to effective end (respects freeze)
-    if c.retainer_snapshot_ils_gross is None:
-        ensure_accruals_up_to(db, case_id=c.id, retainer_anchor_date=c.retainer_anchor_date, up_to=get_effective_end_date(c))
-    elif c.retainer_snapshot_through_month is not None:
-        ensure_accruals_up_to(
-            db,
-            case_id=c.id,
-            retainer_anchor_date=c.retainer_anchor_date,
-            snapshot_through_month=c.retainer_snapshot_through_month,
-            up_to=get_effective_end_date(c),
-        )
+    anchor_for_accruals = getattr(c, "retainer_current_start_date", None) or c.retainer_anchor_date
+    if anchor_for_accruals is not None:
+        if c.retainer_snapshot_ils_gross is None:
+            ensure_accruals_up_to(db, case_id=c.id, retainer_anchor_date=anchor_for_accruals, up_to=get_effective_end_date(c))
+        elif c.retainer_snapshot_through_month is not None:
+            ensure_accruals_up_to(
+                db,
+                case_id=c.id,
+                retainer_anchor_date=anchor_for_accruals,
+                snapshot_through_month=c.retainer_snapshot_through_month,
+                up_to=get_effective_end_date(c),
+            )
     return c
 
 
@@ -500,6 +517,10 @@ def to_case_out(
         "retainer_is_frozen": getattr(case, "retainer_is_frozen", False),
         "retainer_frozen_at": getattr(case, "retainer_frozen_at", None),
         "retainer_end_date": getattr(case, "retainer_end_date", None),
+        "retainer_current_start_date": getattr(case, "retainer_current_start_date", None),
+        "retainer_current_end_date": getattr(case, "retainer_current_end_date", None),
+        "retainer_legacy_start_date": getattr(case, "retainer_legacy_start_date", None),
+        "retainer_legacy_end_date": getattr(case, "retainer_legacy_end_date", None),
         "case_notes": getattr(case, "case_notes", None),
         "expenses_total_ils_gross": getattr(case, "expenses_total_ils_gross", None),
         "manual_overrides_json": getattr(case, "manual_overrides_json", None) or {},

@@ -153,19 +153,18 @@ def debug_theoretical(
     db: Session = Depends(get_db),
     _=Depends(require_admin),
 ):
-    """Admin-only: legacy/regular theoretical and total for a case (verify deploy)."""
-    from app.services import unified as unified_service
+    """Admin-only: theoretical from ledger (current + legacy periods)."""
     c = _get_case_or_404(db, case_id)
-    regular = unified_service._regular_retainer_theoretical_ils(db, c)
-    legacy = unified_service._legacy_retainer_theoretical_ils(db, case_id)
-    total = unified_service.retainer_charged_to_date_ils(db, c)
-    payments = db.query(RetainerPayment).filter(RetainerPayment.case_id == case_id).all()
-    legacy_months_count = sum(1 for p in payments if retainer_service.is_legacy_note(p.note))
+    total, total_current, total_legacy = retainer_service.get_total_retainer_theoretical_ils(db, c)
+    period_months = retainer_service.get_retainer_period_months(c)
+    legacy_months = sum(1 for _, k in period_months if k == "legacy")
+    current_months = sum(1 for _, k in period_months if k == "current")
     return {
         "case_id": case_id,
-        "legacy_months_count": legacy_months_count,
-        "legacy_theoretical_ils": float(legacy),
-        "regular_theoretical_ils": float(regular),
+        "current_months_count": current_months,
+        "legacy_months_count": legacy_months,
+        "total_current_theoretical_ils": float(total_current),
+        "total_legacy_theoretical_ils": float(total_legacy),
         "retainer_charged_to_date_ils": float(total),
     }
 
@@ -181,6 +180,14 @@ def update_retainer_dates(case_id: int, payload: RetainerDatesUpdate, db: Sessio
         retainer_snapshot_through_month=updates.get("retainer_snapshot_through_month"),
         retainer_end_date=updates.get("retainer_end_date") if "retainer_end_date" in updates else None,
         retainer_end_date_sent="retainer_end_date" in updates,
+        retainer_current_start_date=updates.get("retainer_current_start_date"),
+        retainer_current_end_date=updates.get("retainer_current_end_date"),
+        retainer_legacy_start_date=updates.get("retainer_legacy_start_date"),
+        retainer_legacy_end_date=updates.get("retainer_legacy_end_date"),
+        current_start_sent="retainer_current_start_date" in updates,
+        current_end_sent="retainer_current_end_date" in updates,
+        legacy_start_sent="retainer_legacy_start_date" in updates,
+        legacy_end_sent="retainer_legacy_end_date" in updates,
     )
     stages = case_service.get_latest_fee_stage_by_case_ids(db, [c.id])
     return CaseOut(**case_service.to_case_out(db, c, current_procedure_stage=stages.get(c.id)))

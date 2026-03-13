@@ -312,6 +312,72 @@ def _aggregate_payments_by_month(payments: list) -> dict[str, tuple[Decimal, str
     return out
 
 
+def _effective_end_for_period(
+    case: Case,
+    start_date: dt.date | None,
+    end_date: dt.date | None,
+) -> dt.date:
+    """End date for a period: min(today, end_date if set, frozen_at if frozen)."""
+    today = dt.date.today()
+    if end_date is not None:
+        today = min(today, end_date)
+    if getattr(case, "retainer_is_frozen", False):
+        at = getattr(case, "retainer_frozen_at", None)
+        if at is not None and isinstance(at, dt.date):
+            today = min(today, at)
+    return today
+
+
+def get_retainer_period_months(case: Case) -> list[tuple[dt.date, str]]:
+    """Returns [(month_first, 'current'|'legacy'), ...] sorted by month, deduped. Both periods contribute."""
+    today = dt.date.today()
+    months: list[tuple[dt.date, str]] = []
+    current_start = getattr(case, "retainer_current_start_date", None) or getattr(case, "retainer_anchor_date", None)
+    current_end = getattr(case, "retainer_current_end_date", None) or getattr(case, "retainer_end_date", None)
+    if current_start is not None and isinstance(current_start, dt.date):
+        start_m = _month_start(current_start)
+        end_m = _month_start(_effective_end_for_period(case, current_start, current_end))
+        if start_m <= end_m:
+            cur = start_m
+            while cur <= end_m:
+                months.append((cur, "current"))
+                cur = add_months(cur, 1)
+    legacy_start = getattr(case, "retainer_legacy_start_date", None)
+    legacy_end = getattr(case, "retainer_legacy_end_date", None)
+    if legacy_start is not None and isinstance(legacy_start, dt.date):
+        start_m = _month_start(legacy_start)
+        end_m = _month_start(_effective_end_for_period(case, legacy_start, legacy_end))
+        if start_m <= end_m:
+            cur = start_m
+            while cur <= end_m:
+                months.append((cur, "legacy"))
+                cur = add_months(cur, 1)
+    months.sort(key=lambda x: (x[0], x[1]))
+    seen: set[dt.date] = set()
+    out: list[tuple[dt.date, str]] = []
+    for m, kind in months:
+        if m not in seen:
+            seen.add(m)
+            out.append((m, kind))
+    return out
+
+
+def get_total_retainer_theoretical_ils(db: Session, case: Case) -> tuple[Decimal, Decimal, Decimal]:
+    """Returns (total, total_current, total_legacy). Source of truth for ledger and overview. 945+VAT per month."""
+    period_months = get_retainer_period_months(case)
+    total = Decimal("0.00")
+    total_current = Decimal("0.00")
+    total_legacy = Decimal("0.00")
+    for month_first, kind in period_months:
+        gross = retainer_gross_for_month(month_first)
+        total += gross
+        if kind == "current":
+            total_current += gross
+        else:
+            total_legacy += gross
+    return (q_ils(total), q_ils(total_current), q_ils(total_legacy))
+
+
 def _ledger_payments_only(db: Session, *, case_id: int) -> dict:
     """Minimal ledger when case has no retainer_anchor_date: one row per month (payments aggregated)."""
     case = db.query(Case).filter(Case.id == case_id).first()
@@ -358,15 +424,18 @@ def _ledger_payments_only(db: Session, *, case_id: int) -> dict:
         "charged_months_count": charged_months_count,
         "retainer_paid_total_ils_gross": summary["retainer_paid_total_ils_gross"],
         "total_accrued_ils": Decimal("0"),
+        "total_retainer_theoretical_ils_gross": Decimal("0"),
+        "total_current_theoretical_ils": Decimal("0"),
+        "total_legacy_theoretical_ils": Decimal("0"),
         "rows": rows,
     }
 
 
 def build_retainer_ledger(db: Session, *, case_id: int) -> dict:
     """
-    Build month-by-month ledger for display. Ensures accruals exist up to effective end (today or freeze date).
-    Returns dict suitable for RetainerLedgerOut. Returns None if case not found or deleted.
-    When retainer_anchor_date is missing, returns a minimal ledger (payments only) so frontend can show counts.
+    Build month-by-month ledger for display. Two periods: current + legacy. Months = union of both, chronological.
+    Ledger is source of truth for total_retainer_theoretical_ils_gross (945+VAT per month).
+    Returns None if case not found or deleted.
     """
     from app.services.unified import get_effective_end_date
 
@@ -374,18 +443,22 @@ def build_retainer_ledger(db: Session, *, case_id: int) -> dict:
     if not case or getattr(case, "deleted_at", None) is not None:
         return None
     anchor = getattr(case, "retainer_anchor_date", None)
-    if anchor is None:
+    current_start = getattr(case, "retainer_current_start_date", None) or anchor
+    legacy_start = getattr(case, "retainer_legacy_start_date", None)
+    if current_start is None and legacy_start is None:
         return _ledger_payments_only(db, case_id=case_id)
+
     effective_end = get_effective_end_date(case)
     snapshot_through = case.retainer_snapshot_through_month if case.retainer_snapshot_ils_gross else None
     snapshot_paid = q_ils(Decimal(str(case.retainer_snapshot_ils_gross or 0)))
-    ensure_accruals_up_to(
-        db,
-        case_id=case_id,
-        retainer_anchor_date=anchor,
-        up_to=effective_end,
-        snapshot_through_month=snapshot_through,
-    )
+    if current_start is not None:
+        ensure_accruals_up_to(
+            db,
+            case_id=case_id,
+            retainer_anchor_date=current_start,
+            up_to=effective_end,
+            snapshot_through_month=snapshot_through,
+        )
     summary = retainer_summary(db, case_id=case_id)
     current_credit = summary["retainer_credit_balance_ils_gross"]
     rate = vat_rate_for_month(effective_end)
@@ -407,23 +480,28 @@ def build_retainer_ledger(db: Session, *, case_id: int) -> dict:
         .order_by(RetainerPayment.payment_date.asc(), RetainerPayment.id.asc())
         .all()
     )
-
-    # One row per month (YYYY-MM): accrued_ils from accruals, paid_ils = sum of payments in that month.
     accrual_by_month: dict[str, Decimal] = {}
     for a in accruals:
         month_str = a.accrual_month.strftime("%Y-%m")
         accrual_by_month[month_str] = q_ils(Decimal(str(a.amount_ils_gross)))
     paid_by_month = _aggregate_payments_by_month(payments)
-    all_months = sorted(set(accrual_by_month.keys()) | set(paid_by_month.keys()))
+
+    period_months = get_retainer_period_months(case)
+    month_strs = sorted({m.strftime("%Y-%m") for m, _ in period_months})
+    month_to_date = {m.strftime("%Y-%m"): m for m, _ in period_months}
     if snapshot_paid > 0 and snapshot_through is not None:
         snap_month = snapshot_through.strftime("%Y-%m")
-        if snap_month not in all_months:
-            all_months = sorted(set(all_months) | {snap_month})
+        if snap_month not in month_strs:
+            month_strs = sorted(set(month_strs) | {snap_month})
+    month_strs = sorted(set(month_strs) | set(paid_by_month.keys()))
 
     rows = []
     running = Decimal("0.00")
-    for month_str in all_months:
-        accrued = accrual_by_month.get(month_str, Decimal("0"))
+    for month_str in month_strs:
+        accrued = accrual_by_month.get(month_str)
+        if accrued is None and month_str in month_to_date:
+            accrued = retainer_gross_for_month(month_to_date[month_str])
+        accrued = accrued or Decimal("0")
         paid_total, notes = paid_by_month.get(month_str, (Decimal("0"), None))
         if snapshot_paid > 0 and snapshot_through is not None and snapshot_through.strftime("%Y-%m") == month_str:
             paid_total = q_ils(paid_total + snapshot_paid)
@@ -439,19 +517,23 @@ def build_retainer_ledger(db: Session, *, case_id: int) -> dict:
             "notes": notes,
         })
 
-    charged_months_count = len(all_months)
+    charged_months_count = len(month_strs)
     total_paid_ils = summary["retainer_paid_total_ils_gross"]
     total_accrued_ils = q_ils(sum(r["accrued_ils"] for r in rows))
-
+    total_theoretical, total_current_theoretical, total_legacy_theoretical = get_total_retainer_theoretical_ils(db, case)
+    display_anchor = (current_start or anchor or case.open_date)
     return {
         "config": config,
-        "anchor_date": anchor.isoformat(),
+        "anchor_date": display_anchor.isoformat() if hasattr(display_anchor, "isoformat") else str(display_anchor),
         "snapshot_through_month": snapshot_through.isoformat() if snapshot_through else None,
         "snapshot_paid_ils": snapshot_paid,
         "current_credit_ils": current_credit,
         "charged_months_count": charged_months_count,
         "retainer_paid_total_ils_gross": total_paid_ils,
         "total_accrued_ils": total_accrued_ils,
+        "total_retainer_theoretical_ils_gross": total_theoretical,
+        "total_current_theoretical_ils": total_current_theoretical,
+        "total_legacy_theoretical_ils": total_legacy_theoretical,
         "rows": rows,
     }
 

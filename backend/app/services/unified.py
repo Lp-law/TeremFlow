@@ -83,9 +83,11 @@ def _effective_anchor_date(case: Case) -> dt.date | None:
 
 
 def charged_months_count(case: Case) -> int:
-    """Number of months charged from anchor (or month after snapshot_through) to effective_end_date inclusive.
-    Returns 0 if anchor/open_date missing or snapshot_through is wrong type.
-    """
+    """Number of months charged: current + legacy periods (from get_retainer_period_months)."""
+    from app.services.retainer import get_retainer_period_months
+    period_months = get_retainer_period_months(case)
+    if period_months:
+        return len(period_months)
     anchor = _effective_anchor_date(case)
     if anchor is None:
         return 0
@@ -132,16 +134,16 @@ def _regular_retainer_theoretical_ils(db: Session, case: Case) -> Decimal:
 
 
 def retainer_charged_to_date_ils(db: Session, case: Case) -> Decimal:
-    """Theoretical retainer charged = regular (anchor→effective_end) + legacy (LEGACY payments sum).
+    """Theoretical retainer = ledger source of truth (current + legacy periods, months × 945+VAT).
     Override retainer_charged_override replaces the total if set.
     """
     overrides = _safe_overrides(case)
     parsed = _parse_override_to_decimal(overrides.get("retainer_charged_override"))
     if parsed is not None:
         return parsed
-    regular = _regular_retainer_theoretical_ils(db, case)
-    legacy = _legacy_retainer_theoretical_ils(db, case.id)
-    return q_ils(regular + legacy)
+    from app.services.retainer import get_total_retainer_theoretical_ils
+    total, _c, _l = get_total_retainer_theoretical_ils(db, case)
+    return total
 
 
 def fees_by_stages_ils(db: Session, case: Case) -> Decimal:
@@ -217,16 +219,16 @@ def fee_diff_ils(db: Session, case: Case) -> Decimal:
 
 
 def get_unified_summary(db: Session, case: Case) -> dict[str, Any]:
-    """All unified values for overview/deductible tab/export."""
+    """All unified values for overview/deductible tab/export. Ledger is source of truth for retainer total."""
     overrides = _safe_overrides(case)
     override_total = _parse_override_to_decimal(overrides.get("retainer_charged_override"))
-    regular = _regular_retainer_theoretical_ils(db, case)
-    legacy = _legacy_retainer_theoretical_ils(db, case.id)
-    total = override_total if override_total is not None else q_ils(regular + legacy)
+    from app.services.retainer import get_total_retainer_theoretical_ils
+    total, total_current, total_legacy = get_total_retainer_theoretical_ils(db, case)
+    total = override_total if override_total is not None else total
     return {
         "retainer_charged_to_date_ils": total,
-        "retainer_regular_theoretical_ils": regular,
-        "retainer_legacy_theoretical_ils": legacy,
+        "retainer_regular_theoretical_ils": total_current,
+        "retainer_legacy_theoretical_ils": total_legacy,
         "fees_by_stages_ils": fees_by_stages_ils(db, case),
         "expenses_total_ils": expenses_total_ils(case),
         "excess_total_ils": excess_total_ils(case),

@@ -60,8 +60,13 @@ class Case(Base):
     # Retainer freeze: when true, charged months and accruals stop at retainer_frozen_at
     retainer_is_frozen: Mapped[bool] = mapped_column(Boolean, default=False)
     retainer_frozen_at: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
-    # Retainer end date: stop charging after this date (inclusive of month)
+    # Retainer end date: stop charging after this date (inclusive of month); alias for current period end
     retainer_end_date: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    # Two periods: current (ongoing) + legacy (past). Ledger = source of truth for theoretical total.
+    retainer_current_start_date: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    retainer_current_end_date: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    retainer_legacy_start_date: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    retainer_legacy_end_date: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
 
     # Free-text case notes (user-editable)
     case_notes: Mapped[str | None] = mapped_column(Text, nullable=True)

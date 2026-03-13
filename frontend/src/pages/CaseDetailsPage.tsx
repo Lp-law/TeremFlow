@@ -14,8 +14,6 @@ import { useUnsavedGuard } from '../lib/useUnsavedGuard'
 import type {
   CaseOut,
   CaseOverviewSummary,
-  CaseWarning,
-  CaseWarningsResponse,
   DeductibleSummary,
   ExpenseCategory,
   ExpenseOut,
@@ -696,8 +694,6 @@ function OverviewTab({
   const [overview, setOverview] = useState<CaseOverviewSummary | null>(null)
   const [overviewLoading, setOverviewLoading] = useState(true)
   const [overviewError, setOverviewError] = useState<string | null>(null)
-  const [warnings, setWarnings] = useState<CaseWarning[]>([])
-  const [warningsLoading, setWarningsLoading] = useState(true)
 
   const debugRetainerSource =
     showRawImport &&
@@ -731,19 +727,6 @@ function OverviewTab({
       .finally(() => { if (!cancelled) setOverviewLoading(false) })
     return () => { cancelled = true }
   }, [caseId, refreshKey, onSummaryFailed, debugRetainerSource])
-
-  useEffect(() => {
-    let cancelled = false
-    setWarningsLoading(true)
-    apiFetch<CaseWarningsResponse>(`/cases/${caseId}/warnings`)
-      .then((d) => { if (!cancelled) setWarnings(d.warnings) })
-      .catch(() => {
-        if (!cancelled) setWarnings([])
-        onSummaryFailed?.()
-      })
-      .finally(() => { if (!cancelled) setWarningsLoading(false) })
-    return () => { cancelled = true }
-  }, [caseId, onSummaryFailed])
 
   const stageLabel = overview?.current_procedure_stage != null
     ? formatProcedureStage(overview.current_procedure_stage)
@@ -835,46 +818,7 @@ function OverviewTab({
 
       {/* Manual entry panel removed from UI (endpoints kept). */}
 
-      {/* Data quality warnings — read-only; no formula or data changes */}
-      <section>
-        <h3 className="text-sm font-semibold text-muted mb-3">אזהרות / בדיקות תקינות</h3>
-        {warningsLoading ? (
-          <div className="text-sm text-muted py-2">טוען בדיקות...</div>
-        ) : warnings.length === 0 ? (
-          <div className="text-sm text-muted py-2">אין אזהרות.</div>
-        ) : (
-          <ul className="space-y-2">
-            {warnings.map((w) => (
-              <li
-                key={w.code}
-                className={`flex flex-wrap items-center gap-2 rounded px-3 py-2 text-sm ${
-                  w.severity === 'error'
-                    ? 'bg-red-50 text-red-800 border border-red-200'
-                    : w.severity === 'warn'
-                      ? 'bg-amber-50 text-amber-800 border border-amber-200'
-                      : 'bg-slate-100 text-slate-700 border border-slate-200'
-                }`}
-              >
-                <span className="font-medium">{w.title}</span>
-                <span className="text-muted">—</span>
-                <span>{w.details}</span>
-                {w.action_tab && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const t = w.action_tab as 'overview' | 'expenses' | 'deductible' | 'retainer' | 'fees'
-                      if (['overview', 'expenses', 'deductible', 'retainer', 'fees'].includes(t)) setTab(t)
-                    }}
-                    className="btn btn-secondary btn-sm ms-auto"
-                  >
-                    פתח
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      {/* Data quality warnings block hidden from UI (endpoint /cases/{id}/warnings kept) */}
 
       <section>
         <h3 className="text-sm font-semibold text-muted mb-3">זיהוי תיק</h3>
@@ -1965,6 +1909,18 @@ function RetainerPanel({
   const [retainerEndDate, setRetainerEndDate] = useState(
     caseItem.retainer_end_date ? String(caseItem.retainer_end_date).slice(0, 10) : ''
   )
+  const [currentStartDate, setCurrentStartDate] = useState(
+    (caseItem as { retainer_current_start_date?: string | null }).retainer_current_start_date?.slice(0, 10) ?? caseItem.retainer_anchor_date?.slice(0, 10) ?? ''
+  )
+  const [currentEndDate, setCurrentEndDate] = useState(
+    (caseItem as { retainer_current_end_date?: string | null }).retainer_current_end_date?.slice(0, 10) ?? caseItem.retainer_end_date?.slice(0, 10) ?? ''
+  )
+  const [legacyStartDate, setLegacyStartDate] = useState(
+    (caseItem as { retainer_legacy_start_date?: string | null }).retainer_legacy_start_date?.slice(0, 10) ?? ''
+  )
+  const [legacyEndDate, setLegacyEndDate] = useState(
+    (caseItem as { retainer_legacy_end_date?: string | null }).retainer_legacy_end_date?.slice(0, 10) ?? ''
+  )
   const [datesSaveError, setDatesSaveError] = useState<string | null>(null)
   const [datesSaving, setDatesSaving] = useState(false)
   const [freezeSaving, setFreezeSaving] = useState(false)
@@ -2018,16 +1974,33 @@ function RetainerPanel({
       caseItem.retainer_snapshot_through_month ? String(caseItem.retainer_snapshot_through_month).slice(0, 7) : ''
     )
     setRetainerEndDate(caseItem.retainer_end_date ? String(caseItem.retainer_end_date).slice(0, 10) : '')
-  }, [caseItem.retainer_anchor_date, caseItem.retainer_snapshot_through_month, caseItem.retainer_end_date])
+    const c = caseItem as { retainer_current_start_date?: string | null; retainer_current_end_date?: string | null; retainer_legacy_start_date?: string | null; retainer_legacy_end_date?: string | null }
+    setCurrentStartDate(c.retainer_current_start_date?.slice(0, 10) ?? caseItem.retainer_anchor_date?.slice(0, 10) ?? '')
+    setCurrentEndDate(c.retainer_current_end_date?.slice(0, 10) ?? caseItem.retainer_end_date?.slice(0, 10) ?? '')
+    setLegacyStartDate(c.retainer_legacy_start_date?.slice(0, 10) ?? '')
+    setLegacyEndDate(c.retainer_legacy_end_date?.slice(0, 10) ?? '')
+  }, [caseItem.retainer_anchor_date, caseItem.retainer_snapshot_through_month, caseItem.retainer_end_date, (caseItem as { retainer_current_start_date?: string | null }).retainer_current_start_date, (caseItem as { retainer_current_end_date?: string | null }).retainer_current_end_date, (caseItem as { retainer_legacy_start_date?: string | null }).retainer_legacy_start_date, (caseItem as { retainer_legacy_end_date?: string | null }).retainer_legacy_end_date])
 
   async function saveDates() {
     setDatesSaveError(null)
     setDatesSaving(true)
     try {
-      const body: { retainer_anchor_date?: string; retainer_snapshot_through_month?: string; retainer_end_date?: string | null } = {}
-      if (anchorDate) body.retainer_anchor_date = anchorDate
+      const body: {
+        retainer_anchor_date?: string
+        retainer_snapshot_through_month?: string
+        retainer_end_date?: string | null
+        retainer_current_start_date?: string | null
+        retainer_current_end_date?: string | null
+        retainer_legacy_start_date?: string | null
+        retainer_legacy_end_date?: string | null
+      } = {}
+      if (currentStartDate || anchorDate) body.retainer_anchor_date = currentStartDate || anchorDate
       if (snapshotMonth) body.retainer_snapshot_through_month = `${snapshotMonth}-01`
-      body.retainer_end_date = retainerEndDate || null
+      body.retainer_end_date = currentEndDate || retainerEndDate || null
+      body.retainer_current_start_date = currentStartDate || null
+      body.retainer_current_end_date = currentEndDate || null
+      body.retainer_legacy_start_date = legacyStartDate || null
+      body.retainer_legacy_end_date = legacyEndDate || null
       const updated = await apiFetch<CaseOut>(`/cases/${caseId}/retainer/dates`, { method: 'PATCH', body: JSON.stringify(body) })
       await onCaseUpdated?.(updated)
       onRetainerChange?.()
@@ -2079,18 +2052,29 @@ function RetainerPanel({
   return (
     <div className="space-y-6 text-right">
       {error ? <div className="rounded-xl bg-amber-500/20 border border-amber-500/50 px-4 py-3 text-amber-800 dark:text-amber-200">{error}</div> : null}
-      {/* למעלה: תיאורטי (unified); פנקס: totals מהלדג'ר בלבד כשזמין */}
+      {/* פנקס = מקור האמת לתיאורטי; סה״כ תאורטי = total_retainer_theoretical_ils_gross */}
       <div className="card-soft p-4">
         <div className="text-sm text-muted">סה״כ חודשי חיוב: <span className="font-semibold text-foreground">{chargedMonths}</span></div>
-        <div className="text-xs text-muted mt-1">שכ״ט ששולם עד כה (תיאורטי): {retainerCharged != null ? formatILS(retainerCharged) : '—'}</div>
-        {overview?.retainer?.retainer_legacy_theoretical_ils != null && toNumber(overview.retainer.retainer_legacy_theoretical_ils) > 0 ? (
-          <div className="text-xs text-muted mt-1">כולל LEGACY: {formatILS(overview.retainer.retainer_legacy_theoretical_ils)}</div>
-        ) : null}
+        {(() => {
+          const theoreticalFromLedger = ledger?.total_retainer_theoretical_ils_gross != null ? toNumber(ledger.total_retainer_theoretical_ils_gross) : null
+          const displayTheoretical = theoreticalFromLedger ?? retainerCharged
+          return (
+            <>
+              <div className="text-xs text-muted mt-1">שכ״ט ששולם עד כה (תיאורטי): {displayTheoretical != null ? formatILS(displayTheoretical) : '—'}</div>
+              {ledger != null && (ledger.total_current_theoretical_ils != null || ledger.total_legacy_theoretical_ils != null) ? (
+                <div className="text-xs text-muted mt-1">
+                  סה״כ תאורטי – עדכני: {formatILS(toNumber(ledger.total_current_theoretical_ils ?? 0))}
+                  {' · '}LEGACY: {formatILS(toNumber(ledger.total_legacy_theoretical_ils ?? 0))}
+                  {' · '}ביחד: {formatILS(toNumber(ledger.total_retainer_theoretical_ils_gross ?? 0))}
+                </div>
+              ) : null}
+            </>
+          )
+        })()}
         {ledger != null ? (
           <>
-            <div className="text-sm text-muted mt-2 pt-2 border-t border-border/40">פנקס ריטיינר — סיכום מהלדג'ר (כולל תשלומים ידניים):</div>
-            <div className="text-sm text-muted mt-1">סך תשלומים (paid): <span className="font-semibold text-foreground">{formatILS(retainerPaidTotal ?? 0)}</span></div>
-            {ledgerAccruedTotal != null ? <div className="text-sm text-muted mt-1">סך נצבר (accrued): <span className="font-semibold text-foreground">{formatILS(ledgerAccruedTotal)}</span></div> : null}
+            <div className="text-sm text-muted mt-2 pt-2 border-t border-border/40">פנקס — תשלומים (paid): <span className="font-semibold text-foreground">{formatILS(retainerPaidTotal ?? 0)}</span></div>
+            {ledgerAccruedTotal != null ? <div className="text-sm text-muted mt-1">סך נצבר: <span className="font-semibold text-foreground">{formatILS(ledgerAccruedTotal)}</span></div> : null}
             {ledgerCredit != null ? <div className="text-sm text-muted mt-1">יתרת קרדיט: <span className="font-semibold text-foreground">{formatILS(ledgerCredit)}</span></div> : null}
           </>
         ) : null}
@@ -2102,51 +2086,54 @@ function RetainerPanel({
         <div className="font-semibold">{monthlyDisplay}</div>
       </div>
 
-      {/* Editable: תאריך עוגן ריטיינר */}
+      {/* ריטיינר עדכני: תאריך התחלה + תאריך סיום */}
       <div className="card-soft p-4">
-        <div className="text-xs text-muted mb-1">תאריך עוגן ריטיינר</div>
+        <div className="text-sm font-medium text-muted mb-2">ריטיינר עדכני</div>
         <div className="flex flex-wrap items-center gap-2 mt-1">
           <input
             type="date"
             className="input py-2 w-40"
-            value={anchorDate}
-            onChange={(e) => setAnchorDate(e.target.value)}
-            aria-label="תאריך עוגן ריטיינר"
+            value={currentStartDate}
+            onChange={(e) => setCurrentStartDate(e.target.value)}
+            aria-label="תאריך התחלה ריטיינר עדכני"
           />
-          <button
-            type="button"
-            onClick={saveDates}
-            disabled={datesSaving}
-            className="btn btn-primary btn-sm"
-          >
+          <span className="text-muted">–</span>
+          <input
+            type="date"
+            className="input py-2 w-40"
+            value={currentEndDate}
+            onChange={(e) => setCurrentEndDate(e.target.value)}
+            aria-label="תאריך סיום ריטיינר עדכני"
+          />
+          <button type="button" onClick={saveDates} disabled={datesSaving} className="btn btn-primary btn-sm">
             {datesSaving ? '...' : 'שמור'}
           </button>
         </div>
       </div>
 
-      {/* Editable: תאריך סיום ריטיינר */}
+      {/* ריטיינר עבר (LEGACY): תאריך התחלה + תאריך סיום */}
       <div className="card-soft p-4">
-        <div className="text-xs text-muted mb-1">תאריך סיום ריטיינר</div>
+        <div className="text-sm font-medium text-muted mb-2">ריטיינר עבר (LEGACY)</div>
         <div className="flex flex-wrap items-center gap-2 mt-1">
           <input
             type="date"
             className="input py-2 w-40"
-            value={retainerEndDate}
-            onChange={(e) => setRetainerEndDate(e.target.value)}
-            aria-label="תאריך סיום ריטיינר"
+            value={legacyStartDate}
+            onChange={(e) => setLegacyStartDate(e.target.value)}
+            aria-label="תאריך התחלה ריטיינר LEGACY"
           />
-          <button
-            type="button"
-            onClick={saveDates}
-            disabled={datesSaving}
-            className="btn btn-primary btn-sm"
-          >
+          <span className="text-muted">–</span>
+          <input
+            type="date"
+            className="input py-2 w-40"
+            value={legacyEndDate}
+            onChange={(e) => setLegacyEndDate(e.target.value)}
+            aria-label="תאריך סיום ריטיינר LEGACY"
+          />
+          <button type="button" onClick={saveDates} disabled={datesSaving} className="btn btn-primary btn-sm">
             {datesSaving ? '...' : 'שמור'}
           </button>
         </div>
-        {retainerEndDate ? (
-          <div className="text-xs text-muted mt-1">הריטיינר מסתיים ב־{retainerEndDate}</div>
-        ) : null}
       </div>
 
       {/* Snapshot עד חודש — hidden for non-admin */}
