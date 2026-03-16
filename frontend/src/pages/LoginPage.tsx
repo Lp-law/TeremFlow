@@ -85,6 +85,13 @@ export function LoginPage() {
           >
             התחברות
           </button>
+          <a
+            href="https://ringforge.onrender.com/dashboard"
+            className="btn btn-secondary w-full h-14 rounded-2xl"
+            aria-label="מעבר לדשבורד"
+          >
+            דשבורד
+          </a>
         </form>
 
         <div className="mt-6 text-xs text-muted text-center">
