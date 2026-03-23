@@ -353,4 +353,114 @@ export type ClientReportBrand = {
   header_text_hex?: string
 }
 
+export type ClaimsReportStatus = 'DRAFT' | 'FINAL'
+export type ClaimsRowLinkageType = 'LINKED' | 'MANUAL'
+export type ClaimsCategory =
+  | 'COURT_REPORTED_TO_INSURER'
+  | 'REPORTED_WITHOUT_CLAIM'
+  | 'NOT_REPORTED_TO_INSURER'
+  | 'NON_MEDICAL_MALPRACTICE'
+  | 'OTHER'
+export type ClaimsReportCaseStatus =
+  | 'OPEN'
+  | 'CLOSED'
+  | 'CANNOT_ASSESS_YET'
+  | 'NO_EXPOSURE'
+  | 'REJECTED_EXPECTED'
+  | 'SETTLED'
+  | 'JUDGMENT'
+  | 'REJECTED'
+  | 'REJECTED_WITH_COSTS'
+export type ClaimsFinalOutcomeType =
+  | 'SETTLEMENT'
+  | 'JUDGMENT_FOR_PLAINTIFF'
+  | 'CLAIM_REJECTED'
+  | 'CLAIM_REJECTED_WITH_COSTS'
+  | 'CLOSED_WITHOUT_PAYMENT'
+  | 'OTHER'
+
+export type ClaimsReportOut = {
+  id: number
+  client_name: string
+  institution_name: string | null
+  title: string
+  report_cutoff_date: string
+  updated_to_date: string | null
+  recommended_reserve_ils: string | number | null
+  intro_text: string | null
+  closing_text: string | null
+  status: ClaimsReportStatus
+  template_key: string | null
+  created_by_user_id: number | null
+  finalized_at: string | null
+  created_at: string
+  updated_at: string
+  rows_count: number
+  seed_import_metadata_json?: Record<string, unknown> | null
+}
+
+export type ClaimsReportRowOut = {
+  id: number
+  report_id: number
+  linked_case_id: number | null
+  linkage_type: ClaimsRowLinkageType
+  case_reference_text: string | null
+  case_title: string | null
+  court_name: string | null
+  proceeding_number: string | null
+  branch_name: string | null
+  institution_name: string | null
+  category_for_report: ClaimsCategory
+  report_case_status: ClaimsReportCaseStatus
+  status_note: string | null
+  current_risk_assessment_ils: string | number | null
+  risk_assessment_text: string | null
+  risk_assessment_updated_at: string | null
+  risk_assessment_updated_by_user_id: number | null
+  final_outcome_type: ClaimsFinalOutcomeType | null
+  final_outcome_amount_ils: string | number | null
+  awarded_costs_to_terem_ils: string | number | null
+  final_outcome_date: string | null
+  final_outcome_text: string | null
+  deductible_usd: string | number | null
+  deductible_ils_gross: string | number | null
+  amount_already_paid_on_deductible_ils: string | number | null
+  remaining_deductible_ils: string | number | null
+  expenses_total_ils: string | number | null
+  fees_total_ils: string | number | null
+  retainer_charged_ils: string | number | null
+  exposure_for_reserve_ils: string | number | null
+  narrative_text: string | null
+  legal_summary_text: string | null
+  internal_notes: string | null
+  include_in_report: boolean
+  needs_manual_review: boolean
+  last_synced_at: string | null
+  last_manual_update_at: string | null
+  import_metadata_json: Record<string, unknown> | null
+  source_snapshot_json: Record<string, unknown> | null
+  created_at: string
+  updated_at: string
+  narrative_preview: string
+}
+
+export type ClaimsRefreshLinkedRowsOut = {
+  refreshed_rows: number
+  skipped_rows: number
+}
+
+export type ClaimsSeedImportOut = {
+  created_rows: number
+  linked_rows: number
+  manual_rows: number
+  flagged_rows: number
+  skipped_rows: number
+  existing_rows_before: number
+}
+
+export type ClaimsReportDetailsOut = {
+  report: ClaimsReportOut
+  rows: ClaimsReportRowOut[]
+}
+
 

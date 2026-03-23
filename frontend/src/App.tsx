@@ -12,6 +12,8 @@ const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage').then((m) => ({ 
 const ImportPage = lazy(() => import('./pages/ImportPage').then((m) => ({ default: m.ImportPage })))
 const NotificationsPage = lazy(() => import('./pages/NotificationsPage').then((m) => ({ default: m.NotificationsPage })))
 const ClientReportPage = lazy(() => import('./pages/ClientReportPage').then((m) => ({ default: m.ClientReportPage })))
+const ClaimsReportsPage = lazy(() => import('./pages/ClaimsReportsPage').then((m) => ({ default: m.ClaimsReportsPage })))
+const ClaimsReportDetailsPage = lazy(() => import('./pages/ClaimsReportDetailsPage').then((m) => ({ default: m.ClaimsReportDetailsPage })))
 
 function HomeRedirect() {
   const { user, isLoading } = useAuth()
@@ -85,6 +87,22 @@ function AppContent() {
               element={
                 <RequireAuth>
                   <ClientReportPage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/claims-reports"
+              element={
+                <RequireAuth>
+                  <ClaimsReportsPage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/claims-reports/:reportId"
+              element={
+                <RequireAuth>
+                  <ClaimsReportDetailsPage />
                 </RequireAuth>
               }
             />

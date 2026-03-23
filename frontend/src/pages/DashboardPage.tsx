@@ -239,6 +239,7 @@ export function DashboardPage() {
         <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
           <CardLink to="/notifications" title="התראות" subtitle="התראות מערכת (ריטיינר / השתתפות עצמית / מבטח)" />
           <CardLink to="/dashboard/client-report" title="דיווח ללקוח" subtitle="סקירת תיקים פתוחים — אקסס, הוצאות ושכ״ט לפי שלבים, ייצוא לאקסל" />
+          <CardLink to="/claims-reports" title='דו"חות תביעות / חשיפות' subtitle='ניהול דו"חות תקופתיים עם רשומות ידניות ומקושרות לתיקים קיימים' />
         </div>
 
         <div className="mt-8 card p-6">
