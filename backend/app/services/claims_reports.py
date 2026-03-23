@@ -4,7 +4,7 @@ import datetime as dt
 from decimal import Decimal
 from typing import Any
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -19,6 +19,43 @@ from app.models.enums import (
 )
 from app.services.deductible import q_ils
 from app.services.unified import get_unified_summary
+
+SYNCED_FIELDS: tuple[str, ...] = (
+    "linked_case_id",
+    "linkage_type",
+    "case_reference_text",
+    "case_title",
+    "branch_name",
+    "deductible_usd",
+    "deductible_ils_gross",
+    "amount_already_paid_on_deductible_ils",
+    "remaining_deductible_ils",
+    "expenses_total_ils",
+    "fees_total_ils",
+    "retainer_charged_ils",
+    "exposure_for_reserve_ils",
+    "report_case_status",
+    "source_snapshot_json",
+)
+
+MANUAL_FIELDS: tuple[str, ...] = (
+    "category_for_report",
+    "court_name",
+    "proceeding_number",
+    "institution_name",
+    "status_note",
+    "current_risk_assessment_ils",
+    "risk_assessment_text",
+    "final_outcome_type",
+    "final_outcome_amount_ils",
+    "awarded_costs_to_terem_ils",
+    "final_outcome_date",
+    "final_outcome_text",
+    "narrative_text",
+    "legal_summary_text",
+    "internal_notes",
+    "include_in_report",
+)
 
 
 def _as_decimal(v: Any) -> Decimal | None:
@@ -35,11 +72,6 @@ def get_report_or_404(db: Session, report_id: int) -> ClaimsReport:
     if not report:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
     return report
-
-
-def _ensure_report_is_draft(report: ClaimsReport) -> None:
-    if report.status == ClaimsReportStatus.FINAL:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Report is finalized and cannot be modified")
 
 
 def list_reports(db: Session) -> list[dict[str, Any]]:
@@ -102,7 +134,6 @@ def create_report(db: Session, payload, *, user_id: int | None) -> ClaimsReport:
 
 def update_report(db: Session, *, report_id: int, payload) -> ClaimsReport:
     report = get_report_or_404(db, report_id)
-    _ensure_report_is_draft(report)
     data = payload.model_dump(exclude_unset=True)
     for k, v in data.items():
         setattr(report, k, v)
@@ -113,7 +144,6 @@ def update_report(db: Session, *, report_id: int, payload) -> ClaimsReport:
 
 def soft_delete_report(db: Session, *, report_id: int) -> ClaimsReport:
     report = get_report_or_404(db, report_id)
-    _ensure_report_is_draft(report)
     report.deleted_at = dt.datetime.now(dt.timezone.utc)
     db.commit()
     db.refresh(report)
@@ -122,9 +152,9 @@ def soft_delete_report(db: Session, *, report_id: int) -> ClaimsReport:
 
 def finalize_report(db: Session, *, report_id: int) -> ClaimsReport:
     report = get_report_or_404(db, report_id)
-    _ensure_report_is_draft(report)
     report.status = ClaimsReportStatus.FINAL
-    report.finalized_at = dt.datetime.now(dt.timezone.utc)
+    if report.finalized_at is None:
+        report.finalized_at = dt.datetime.now(dt.timezone.utc)
     db.commit()
     db.refresh(report)
     return report
@@ -184,6 +214,8 @@ def duplicate_report(db: Session, *, report_id: int, user_id: int | None) -> Cla
                 legal_summary_text=r.legal_summary_text,
                 internal_notes=r.internal_notes,
                 include_in_report=r.include_in_report,
+                last_synced_at=r.last_synced_at,
+                last_manual_update_at=r.last_manual_update_at,
                 source_snapshot_json=r.source_snapshot_json,
             )
         )
@@ -255,6 +287,8 @@ def _row_to_out(row: ClaimsReportRow) -> dict[str, Any]:
         "legal_summary_text": row.legal_summary_text,
         "internal_notes": row.internal_notes,
         "include_in_report": row.include_in_report,
+        "last_synced_at": row.last_synced_at,
+        "last_manual_update_at": row.last_manual_update_at,
         "source_snapshot_json": row.source_snapshot_json,
         "created_at": row.created_at,
         "updated_at": row.updated_at,
@@ -333,17 +367,32 @@ def _apply_payload_to_row(row: ClaimsReportRow, payload: dict[str, Any], *, user
         row.risk_assessment_updated_by_user_id = user_id
 
 
+def _apply_synced_fields_only(row: ClaimsReportRow, synced_payload: dict[str, Any]) -> None:
+    for field in SYNCED_FIELDS:
+        if field in synced_payload:
+            setattr(row, field, synced_payload[field])
+    row.last_synced_at = dt.datetime.now(dt.timezone.utc)
+
+
+def _touch_manual_metadata(row: ClaimsReportRow, payload: dict[str, Any], *, user_id: int | None = None) -> None:
+    if any(field in payload for field in MANUAL_FIELDS):
+        row.last_manual_update_at = dt.datetime.now(dt.timezone.utc)
+    if "current_risk_assessment_ils" in payload or "risk_assessment_text" in payload:
+        row.risk_assessment_updated_at = dt.datetime.now(dt.timezone.utc)
+        row.risk_assessment_updated_by_user_id = user_id
+
+
 def create_row(db: Session, *, report_id: int, payload, user_id: int | None) -> ClaimsReportRow:
     report = get_report_or_404(db, report_id)
-    _ensure_report_is_draft(report)
     data = payload.model_dump(exclude_unset=True)
     row = ClaimsReportRow(report_id=report_id)
     if data.get("linked_case_id"):
         case = db.query(Case).filter(Case.id == data["linked_case_id"], Case.deleted_at.is_(None)).first()
         if not case:
             raise HTTPException(status_code=404, detail="Linked case not found")
-        _apply_payload_to_row(row, _prefill_from_case(db, case), user_id=user_id)
+        _apply_synced_fields_only(row, _prefill_from_case(db, case))
     _apply_payload_to_row(row, data, user_id=user_id)
+    _touch_manual_metadata(row, data, user_id=user_id)
     if row.linked_case_id is None and row.linkage_type == ClaimsRowLinkageType.LINKED:
         row.linkage_type = ClaimsRowLinkageType.MANUAL
     db.add(row)
@@ -354,7 +403,6 @@ def create_row(db: Session, *, report_id: int, payload, user_id: int | None) -> 
 
 def update_row(db: Session, *, report_id: int, row_id: int, payload, user_id: int | None) -> ClaimsReportRow:
     report = get_report_or_404(db, report_id)
-    _ensure_report_is_draft(report)
     row = db.query(ClaimsReportRow).filter(ClaimsReportRow.id == row_id, ClaimsReportRow.report_id == report_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="Row not found")
@@ -363,8 +411,9 @@ def update_row(db: Session, *, report_id: int, row_id: int, payload, user_id: in
         case = db.query(Case).filter(Case.id == data["linked_case_id"], Case.deleted_at.is_(None)).first()
         if not case:
             raise HTTPException(status_code=404, detail="Linked case not found")
-        _apply_payload_to_row(row, _prefill_from_case(db, case), user_id=user_id)
+        _apply_synced_fields_only(row, _prefill_from_case(db, case))
     _apply_payload_to_row(row, data, user_id=user_id)
+    _touch_manual_metadata(row, data, user_id=user_id)
     if row.linked_case_id is None and row.linkage_type == ClaimsRowLinkageType.LINKED:
         row.linkage_type = ClaimsRowLinkageType.MANUAL
     db.commit()
@@ -374,7 +423,6 @@ def update_row(db: Session, *, report_id: int, row_id: int, payload, user_id: in
 
 def delete_row(db: Session, *, report_id: int, row_id: int) -> None:
     report = get_report_or_404(db, report_id)
-    _ensure_report_is_draft(report)
     row = db.query(ClaimsReportRow).filter(ClaimsReportRow.id == row_id, ClaimsReportRow.report_id == report_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="Row not found")
@@ -384,7 +432,6 @@ def delete_row(db: Session, *, report_id: int, row_id: int) -> None:
 
 def import_rows_from_cases(db: Session, *, report_id: int, case_ids: list[int], category_for_report, include_in_report: bool) -> tuple[int, int]:
     report = get_report_or_404(db, report_id)
-    _ensure_report_is_draft(report)
     unique_ids = sorted({int(c) for c in case_ids if c})
     if not unique_ids:
         return (0, 0)
@@ -402,13 +449,52 @@ def import_rows_from_cases(db: Session, *, report_id: int, case_ids: list[int], 
             skipped += 1
             continue
         row = ClaimsReportRow(report_id=report_id)
-        _apply_payload_to_row(row, _prefill_from_case(db, case))
+        _apply_synced_fields_only(row, _prefill_from_case(db, case))
         row.category_for_report = category_for_report
         row.include_in_report = include_in_report
+        row.last_manual_update_at = dt.datetime.now(dt.timezone.utc)
         db.add(row)
         created += 1
     db.commit()
     return (created, skipped)
+
+
+def refresh_row_from_linked_case(db: Session, *, report_id: int, row_id: int, user_id: int | None = None) -> ClaimsReportRow:
+    _ = user_id  # reserved for future audit detail enrichment
+    get_report_or_404(db, report_id)
+    row = db.query(ClaimsReportRow).filter(ClaimsReportRow.id == row_id, ClaimsReportRow.report_id == report_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Row not found")
+    if not row.linked_case_id:
+        raise HTTPException(status_code=400, detail="Row is not linked to a case")
+    case = db.query(Case).filter(Case.id == row.linked_case_id, Case.deleted_at.is_(None)).first()
+    if not case:
+        raise HTTPException(status_code=404, detail="Linked case not found")
+    _apply_synced_fields_only(row, _prefill_from_case(db, case))
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def refresh_all_linked_rows(db: Session, *, report_id: int, user_id: int | None = None) -> tuple[int, int]:
+    _ = user_id  # reserved for future audit detail enrichment
+    get_report_or_404(db, report_id)
+    rows = (
+        db.query(ClaimsReportRow)
+        .filter(ClaimsReportRow.report_id == report_id, ClaimsReportRow.linked_case_id.is_not(None))
+        .all()
+    )
+    refreshed = 0
+    skipped = 0
+    for row in rows:
+        case = db.query(Case).filter(Case.id == row.linked_case_id, Case.deleted_at.is_(None)).first()
+        if not case:
+            skipped += 1
+            continue
+        _apply_synced_fields_only(row, _prefill_from_case(db, case))
+        refreshed += 1
+    db.commit()
+    return refreshed, skipped
 
 
 def build_report_docx_payload(db: Session, report_id: int) -> tuple[ClaimsReport, list[ClaimsReportRow]]:

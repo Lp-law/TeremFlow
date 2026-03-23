@@ -168,6 +168,8 @@ class ClaimsReportRowOut(BaseModel):
     legal_summary_text: str | None
     internal_notes: str | None
     include_in_report: bool
+    last_synced_at: dt.datetime | None
+    last_manual_update_at: dt.datetime | None
     source_snapshot_json: dict | None
     created_at: dt.datetime
     updated_at: dt.datetime
@@ -182,6 +184,11 @@ class ClaimsImportFromCasesRequest(BaseModel):
 
 class ClaimsImportFromCasesOut(BaseModel):
     created_rows: int
+    skipped_rows: int
+
+
+class ClaimsRefreshLinkedRowsOut(BaseModel):
+    refreshed_rows: int
     skipped_rows: int
 
 

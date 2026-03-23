@@ -88,6 +88,10 @@ class ClaimsReportRow(Base):
     legal_summary_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     internal_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     include_in_report: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    # Sync metadata for linked rows (case-derived fields refresh).
+    last_synced_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    # Manual update metadata (risk/narrative/outcome and other manual fields).
+    last_manual_update_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     source_snapshot_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
     updated_at: Mapped[dt.datetime] = mapped_column(

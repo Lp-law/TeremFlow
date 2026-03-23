@@ -9,6 +9,7 @@ from app.db.session import get_db
 from app.schemas.claims_report import (
     ClaimsImportFromCasesOut,
     ClaimsImportFromCasesRequest,
+    ClaimsRefreshLinkedRowsOut,
     ClaimsReportCreate,
     ClaimsReportDetailsOut,
     ClaimsReportFinalizeOut,
@@ -106,6 +107,23 @@ def import_claims_rows_from_cases(
         include_in_report=payload.include_in_report,
     )
     return ClaimsImportFromCasesOut(created_rows=created, skipped_rows=skipped)
+
+
+@router.post("/{report_id}/rows/{row_id}/refresh-from-case", response_model=ClaimsReportRowOut)
+def refresh_claims_report_row_from_case(
+    report_id: int,
+    row_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(require_auth),
+):
+    row = claims_service.refresh_row_from_linked_case(db, report_id=report_id, row_id=row_id, user_id=user.id)
+    return ClaimsReportRowOut(**claims_service.row_to_out(row))
+
+
+@router.post("/{report_id}/rows/refresh-linked", response_model=ClaimsRefreshLinkedRowsOut)
+def refresh_all_linked_rows(report_id: int, db: Session = Depends(get_db), user=Depends(require_auth)):
+    refreshed, skipped = claims_service.refresh_all_linked_rows(db, report_id=report_id, user_id=user.id)
+    return ClaimsRefreshLinkedRowsOut(refreshed_rows=refreshed, skipped_rows=skipped)
 
 
 @router.post("/{report_id}/export/docx")

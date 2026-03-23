@@ -7,6 +7,7 @@ import type {
   CaseOut,
   ClaimsCategory,
   ClaimsFinalOutcomeType,
+  ClaimsRefreshLinkedRowsOut,
   ClaimsReportCaseStatus,
   ClaimsReportDetailsOut,
   ClaimsReportOut,
@@ -212,8 +213,14 @@ export function ClaimsReportDetailsPage() {
   const [importCategory, setImportCategory] = useState<ClaimsCategory>('OTHER')
   const [importInclude, setImportInclude] = useState(true)
   const [isImporting, setIsImporting] = useState(false)
+  const [isRefreshingLinked, setIsRefreshingLinked] = useState(false)
 
   const isFinal = report?.status === 'FINAL'
+
+  function fmtDateTime(v: string | null) {
+    if (!v) return '—'
+    return v.slice(0, 16).replace('T', ' ')
+  }
 
   async function load() {
     setError(null)
@@ -256,7 +263,7 @@ export function ClaimsReportDetailsPage() {
   }, [rows])
 
   async function saveTopLevelReport() {
-    if (!report || isFinal) return
+    if (!report) return
     try {
       const updated = await apiFetch<ClaimsReportOut>(`/claims-reports/${report.id}`, {
         method: 'PATCH',
@@ -277,7 +284,6 @@ export function ClaimsReportDetailsPage() {
   }
 
   async function createRow() {
-    if (isFinal) return
     setRowFormError(null)
     setIsSavingRow(true)
     try {
@@ -296,7 +302,7 @@ export function ClaimsReportDetailsPage() {
   }
 
   async function saveEditedRow() {
-    if (isFinal || editingRowId == null) return
+    if (editingRowId == null) return
     setRowFormError(null)
     setIsSavingRow(true)
     try {
@@ -314,7 +320,6 @@ export function ClaimsReportDetailsPage() {
   }
 
   async function deleteRow(rowId: number) {
-    if (isFinal) return
     if (!window.confirm('למחוק רשומה זו?')) return
     try {
       await apiFetch(`/claims-reports/${id}/rows/${rowId}`, { method: 'DELETE' })
@@ -359,7 +364,7 @@ export function ClaimsReportDetailsPage() {
 
   async function finalizeReport() {
     if (isFinal) return
-    if (!window.confirm('לסיים דו"ח? לאחר סיום לא ניתן לערוך רשומות.')) return
+    if (!window.confirm('לסמן דו"ח כ-FINAL? ניתן להמשיך לערוך גם לאחר מכן.')) return
     try {
       const fin = await apiFetch<{ id: number; status: 'DRAFT' | 'FINAL'; finalized_at: string | null }>(`/claims-reports/${id}/finalize`, {
         method: 'POST',
@@ -384,6 +389,30 @@ export function ClaimsReportDetailsPage() {
     }
   }
 
+  async function refreshRowFromCase(rowId: number) {
+    try {
+      await apiFetch(`/claims-reports/${id}/rows/${rowId}/refresh-from-case`, { method: 'POST' })
+      await load()
+    } catch (e: any) {
+      setError(e?.message || 'שגיאה ברענון רשומה מהתיק')
+    }
+  }
+
+  async function refreshAllLinkedRows() {
+    setIsRefreshingLinked(true)
+    try {
+      const res = await apiFetch<ClaimsRefreshLinkedRowsOut>(`/claims-reports/${id}/rows/refresh-linked`, { method: 'POST' })
+      await load()
+      if (res.skipped_rows > 0) {
+        setError(`רועננו ${res.refreshed_rows} רשומות, ודולגו ${res.skipped_rows} (תיקים חסרים/מחוקים).`)
+      }
+    } catch (e: any) {
+      setError(e?.message || 'שגיאה ברענון רשומות מקושרות')
+    } finally {
+      setIsRefreshingLinked(false)
+    }
+  }
+
   if (!Number.isFinite(id)) {
     return (
       <div className="min-h-screen w-full px-6 py-10">
@@ -404,6 +433,7 @@ export function ClaimsReportDetailsPage() {
             <div className="text-sm text-muted mt-1">
               סטטוס: {report?.status === 'FINAL' ? 'סופי' : 'טיוטה'} {report?.finalized_at ? `• סוכם ב-${report.finalized_at.slice(0, 16).replace('T', ' ')}` : ''}
             </div>
+            <div className="text-xs text-muted mt-1">FINAL הוא סטטוס עסקי בלבד - העריכה נשארת פתוחה.</div>
           </div>
           <div className="flex gap-2">
             <Link to="/claims-reports" className="btn btn-secondary">לרשימת דו"חות</Link>
@@ -426,31 +456,31 @@ export function ClaimsReportDetailsPage() {
               <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="text-right">
                   <label className="block text-sm text-muted mb-1">כותרת דו"ח</label>
-                  <input className="input w-full" disabled={isFinal} value={report.title} onChange={(e) => setReport((p) => (p ? { ...p, title: e.target.value } : p))} />
+                  <input className="input w-full" value={report.title} onChange={(e) => setReport((p) => (p ? { ...p, title: e.target.value } : p))} />
                 </div>
                 <div className="text-right">
                   <label className="block text-sm text-muted mb-1">לקוח</label>
-                  <input className="input w-full" disabled={isFinal} value={report.client_name} onChange={(e) => setReport((p) => (p ? { ...p, client_name: e.target.value } : p))} />
+                  <input className="input w-full" value={report.client_name} onChange={(e) => setReport((p) => (p ? { ...p, client_name: e.target.value } : p))} />
                 </div>
                 <div className="text-right">
                   <label className="block text-sm text-muted mb-1">תאריך חתך</label>
-                  <input className="input w-full" type="date" disabled={isFinal} value={report.report_cutoff_date} onChange={(e) => setReport((p) => (p ? { ...p, report_cutoff_date: e.target.value } : p))} />
+                  <input className="input w-full" type="date" value={report.report_cutoff_date} onChange={(e) => setReport((p) => (p ? { ...p, report_cutoff_date: e.target.value } : p))} />
                 </div>
                 <div className="text-right">
                   <label className="block text-sm text-muted mb-1">מעודכן עד</label>
-                  <input className="input w-full" type="date" disabled={isFinal} value={report.updated_to_date || ''} onChange={(e) => setReport((p) => (p ? { ...p, updated_to_date: e.target.value || null } : p))} />
+                  <input className="input w-full" type="date" value={report.updated_to_date || ''} onChange={(e) => setReport((p) => (p ? { ...p, updated_to_date: e.target.value || null } : p))} />
                 </div>
               </div>
               <div className="mt-4">
                 <label className="block text-sm text-muted mb-1 text-right">פתיח</label>
-                <textarea className="input w-full min-h-[90px]" disabled={isFinal} value={report.intro_text || ''} onChange={(e) => setReport((p) => (p ? { ...p, intro_text: e.target.value } : p))} />
+                <textarea className="input w-full min-h-[90px]" value={report.intro_text || ''} onChange={(e) => setReport((p) => (p ? { ...p, intro_text: e.target.value } : p))} />
               </div>
               <div className="mt-4">
                 <label className="block text-sm text-muted mb-1 text-right">סיכום/סגירה</label>
-                <textarea className="input w-full min-h-[90px]" disabled={isFinal} value={report.closing_text || ''} onChange={(e) => setReport((p) => (p ? { ...p, closing_text: e.target.value } : p))} />
+                <textarea className="input w-full min-h-[90px]" value={report.closing_text || ''} onChange={(e) => setReport((p) => (p ? { ...p, closing_text: e.target.value } : p))} />
               </div>
               <div className="mt-4 flex gap-2 justify-end">
-                {!isFinal ? <button className="btn btn-primary" onClick={saveTopLevelReport}>שמור פרטי דו"ח</button> : null}
+                <button className="btn btn-primary" onClick={saveTopLevelReport}>שמור פרטי דו"ח</button>
                 <button className="btn btn-secondary" onClick={exportDocx}>ייצוא Word</button>
                 {!isFinal ? <button className="btn btn-secondary" onClick={finalizeReport}>סיום דו"ח (Finalize)</button> : null}
               </div>
@@ -474,12 +504,17 @@ export function ClaimsReportDetailsPage() {
                     <option value="LINKED">מקושר לתיק קיים</option>
                   </select>
                 </div>
-                {!isFinal ? (
-                  <div className="flex gap-2">
-                    <button className="btn btn-secondary" onClick={openImportCases}>הוסף מתיקים קיימים</button>
-                    <button className="btn btn-primary" onClick={() => { setShowNewRow(true); setNewRowForm(defaultRowForm) }}>הוסף רשומה ידנית</button>
-                  </div>
-                ) : null}
+                <div className="flex gap-2">
+                  <button className="btn btn-secondary" onClick={refreshAllLinkedRows} disabled={isRefreshingLinked}>
+                    {isRefreshingLinked ? 'מרענן...' : 'רענון כל הרשומות המקושרות'}
+                  </button>
+                  <button className="btn btn-secondary" onClick={openImportCases}>הוסף מתיקים קיימים</button>
+                  <button className="btn btn-primary" onClick={() => { setShowNewRow(true); setNewRowForm(defaultRowForm) }}>הוסף רשומה ידנית</button>
+                </div>
+              </div>
+              <div className="mt-3 text-xs text-muted text-right">
+                שדות מסונכרנים מהתיק: מזהה/כותרת תיק, סטטוס תיק בדו"ח, deductible/expenses/fees/retainer/exposure.
+                שדות ידניים: הערכת סיכון, narrative, תוצאת סיום, include/exclude והערות.
               </div>
 
               <div className="mt-4 overflow-x-auto">
@@ -491,6 +526,7 @@ export function ClaimsReportDetailsPage() {
                       <th className="py-2 px-2">סטטוס</th>
                       <th className="py-2 px-2">סוג</th>
                       <th className="py-2 px-2">חשיפה לרזרבה</th>
+                      <th className="py-2 px-2">סנכרון</th>
                       <th className="py-2 px-2">כלול בדו"ח</th>
                       <th className="py-2 px-2">פעולות</th>
                     </tr>
@@ -501,24 +537,30 @@ export function ClaimsReportDetailsPage() {
                         <td className="py-2 px-2">
                           <div className="font-medium">{r.case_title || r.case_reference_text || `רשומה ${r.id}`}</div>
                           <div className="text-xs text-muted">{r.narrative_preview}</div>
+                          <div className="text-xs text-muted mt-1">{r.linkage_type === 'LINKED' ? 'מקור: תיק קיים + שדות ידניים' : 'רשומה ידנית'}</div>
                         </td>
                         <td className="py-2 px-2">{CATEGORY_LABEL[r.category_for_report]}</td>
                         <td className="py-2 px-2">{CASE_STATUS_LABEL[r.report_case_status]}</td>
                         <td className="py-2 px-2">{r.linkage_type === 'LINKED' ? 'מקושר' : 'ידני'}</td>
                         <td className="py-2 px-2">{r.exposure_for_reserve_ils == null ? '—' : formatILS(r.exposure_for_reserve_ils)}</td>
+                        <td className="py-2 px-2">
+                          <div className="text-xs">sync: {fmtDateTime(r.last_synced_at)}</div>
+                          <div className="text-xs text-muted">manual: {fmtDateTime(r.last_manual_update_at)}</div>
+                        </td>
                         <td className="py-2 px-2">{r.include_in_report ? 'כן' : 'לא'}</td>
                         <td className="py-2 px-2">
                           <div className="flex gap-2 justify-end">
-                            {!isFinal ? (
-                              <>
-                                <button className="btn btn-secondary h-9 px-3" onClick={() => { setEditingRowId(r.id); setEditRowForm(rowToForm(r)); setRowFormError(null) }}>
-                                  עריכה
-                                </button>
-                                <button className="btn btn-secondary h-9 px-3" onClick={() => deleteRow(r.id)}>
-                                  מחיקה
-                                </button>
-                              </>
+                            <button className="btn btn-secondary h-9 px-3" onClick={() => { setEditingRowId(r.id); setEditRowForm(rowToForm(r)); setRowFormError(null) }}>
+                              עריכה
+                            </button>
+                            {r.linkage_type === 'LINKED' && r.linked_case_id ? (
+                              <button className="btn btn-secondary h-9 px-3" onClick={() => refreshRowFromCase(r.id)}>
+                                רענון מהתיק
+                              </button>
                             ) : null}
+                            <button className="btn btn-secondary h-9 px-3" onClick={() => deleteRow(r.id)}>
+                              מחיקה
+                            </button>
                           </div>
                         </td>
                       </tr>

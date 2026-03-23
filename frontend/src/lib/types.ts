@@ -433,10 +433,17 @@ export type ClaimsReportRowOut = {
   legal_summary_text: string | null
   internal_notes: string | null
   include_in_report: boolean
+  last_synced_at: string | null
+  last_manual_update_at: string | null
   source_snapshot_json: Record<string, unknown> | null
   created_at: string
   updated_at: string
   narrative_preview: string
+}
+
+export type ClaimsRefreshLinkedRowsOut = {
+  refreshed_rows: number
+  skipped_rows: number
 }
 
 export type ClaimsReportDetailsOut = {
