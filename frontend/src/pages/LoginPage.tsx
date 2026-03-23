@@ -9,6 +9,7 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showSlowServerHint, setShowSlowServerHint] = useState(false)
+  const [showRetryHint, setShowRetryHint] = useState(false)
 
   useEffect(() => {
     if (!isSubmitting) {
@@ -16,6 +17,15 @@ export function LoginPage() {
       return
     }
     const timer = window.setTimeout(() => setShowSlowServerHint(true), 3500)
+    return () => window.clearTimeout(timer)
+  }, [isSubmitting])
+
+  useEffect(() => {
+    if (!isSubmitting) {
+      setShowRetryHint(false)
+      return
+    }
+    const timer = window.setTimeout(() => setShowRetryHint(true), 90000)
     return () => window.clearTimeout(timer)
   }, [isSubmitting])
 
@@ -92,13 +102,27 @@ export function LoginPage() {
               השרת מתעורר כרגע. ההתחברות עלולה לקחת עד כדקה בפעם הראשונה.
             </div>
           ) : null}
+          {showRetryHint ? (
+            <div className="space-y-3">
+              <div className="text-sm text-amber-300 text-right" role="status" aria-live="polite">
+                ההתחברות מתעכבת יותר מהרגיל. אפשר לנסות שוב.
+              </div>
+              <button
+                type="button"
+                className="btn btn-secondary w-full h-12 rounded-2xl"
+                onClick={() => window.location.reload()}
+              >
+                נסה שוב
+              </button>
+            </div>
+          ) : null}
 
           <button
             type="submit"
             disabled={isSubmitting}
             className="btn btn-primary w-full h-14 rounded-2xl"
           >
-            התחברות
+            {isSubmitting ? 'מתחבר…' : 'התחברות'}
           </button>
           <a
             href="https://ringforge.onrender.com/dashboard"
