@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 
 export function LoginPage() {
@@ -8,6 +8,16 @@ export function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [showSlowServerHint, setShowSlowServerHint] = useState(false)
+
+  useEffect(() => {
+    if (!isSubmitting) {
+      setShowSlowServerHint(false)
+      return
+    }
+    const timer = window.setTimeout(() => setShowSlowServerHint(true), 3500)
+    return () => window.clearTimeout(timer)
+  }, [isSubmitting])
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -77,6 +87,11 @@ export function LoginPage() {
           </div>
 
           {error ? <div className="text-sm text-red-300 text-right">{error}</div> : null}
+          {showSlowServerHint ? (
+            <div className="text-sm text-muted text-right" role="status" aria-live="polite">
+              השרת מתעורר כרגע. ההתחברות עלולה לקחת עד כדקה בפעם הראשונה.
+            </div>
+          ) : null}
 
           <button
             type="submit"

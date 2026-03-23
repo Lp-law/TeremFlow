@@ -122,7 +122,31 @@ services:
           process.exit(1);
         }
       }
-      run(0).catch(e=>{console.error(e);process.exit(1);});
+      async function warmUp(attempt){
+        const attemptNo=attempt+1;
+        const warmUrl=api+'/health';
+        try{
+          const r=await fetchWithTimeout(warmUrl,{method:'GET'});
+          if(r.ok){ return; }
+          const canRetry=(r.status===429||r.status>=500)&&attemptNo<maxAttempts;
+          if(canRetry){
+            const delayMs=computeDelayMs(attemptNo, r.headers.get('retry-after'));
+            console.error('Warmup HTTP '+r.status+' - retrying in '+Math.round(delayMs/1000)+'s (attempt '+attemptNo+'/'+maxAttempts+')');
+            await sleep(delayMs);
+            return warmUp(attempt+1);
+          }
+          console.error('Warmup HTTP '+r.status+' - continuing to tasks endpoint');
+        } catch(e){
+          if(attemptNo<maxAttempts){
+            const delayMs=computeDelayMs(attemptNo, null);
+            console.error('Warmup request failed: '+(e && e.message ? e.message : String(e))+' - retrying in '+Math.round(delayMs/1000)+'s (attempt '+attemptNo+'/'+maxAttempts+')');
+            await sleep(delayMs);
+            return warmUp(attempt+1);
+          }
+          console.error('Warmup failed repeatedly - continuing to tasks endpoint');
+        }
+      }
+      warmUp(0).then(()=>run(0)).catch(e=>{console.error(e);process.exit(1);});
       "
     envVars:
       - key: API_URL
