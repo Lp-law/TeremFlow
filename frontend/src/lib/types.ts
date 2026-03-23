@@ -396,6 +396,7 @@ export type ClaimsReportOut = {
   created_at: string
   updated_at: string
   rows_count: number
+  seed_import_metadata_json?: Record<string, unknown> | null
 }
 
 export type ClaimsReportRowOut = {
@@ -433,8 +434,10 @@ export type ClaimsReportRowOut = {
   legal_summary_text: string | null
   internal_notes: string | null
   include_in_report: boolean
+  needs_manual_review: boolean
   last_synced_at: string | null
   last_manual_update_at: string | null
+  import_metadata_json: Record<string, unknown> | null
   source_snapshot_json: Record<string, unknown> | null
   created_at: string
   updated_at: string
@@ -444,6 +447,15 @@ export type ClaimsReportRowOut = {
 export type ClaimsRefreshLinkedRowsOut = {
   refreshed_rows: number
   skipped_rows: number
+}
+
+export type ClaimsSeedImportOut = {
+  created_rows: number
+  linked_rows: number
+  manual_rows: number
+  flagged_rows: number
+  skipped_rows: number
+  existing_rows_before: number
 }
 
 export type ClaimsReportDetailsOut = {

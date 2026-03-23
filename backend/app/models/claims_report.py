@@ -30,6 +30,7 @@ class ClaimsReport(Base):
     closing_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[ClaimsReportStatus] = mapped_column(Enum(ClaimsReportStatus), default=ClaimsReportStatus.DRAFT, index=True)
     template_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    seed_import_metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     finalized_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     deleted_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
@@ -92,6 +93,9 @@ class ClaimsReportRow(Base):
     last_synced_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     # Manual update metadata (risk/narrative/outcome and other manual fields).
     last_manual_update_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    deleted_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    needs_manual_review: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    import_metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     source_snapshot_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
     updated_at: Mapped[dt.datetime] = mapped_column(

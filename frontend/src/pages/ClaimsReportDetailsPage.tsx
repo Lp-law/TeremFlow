@@ -12,6 +12,7 @@ import type {
   ClaimsReportDetailsOut,
   ClaimsReportOut,
   ClaimsReportRowOut,
+  ClaimsSeedImportOut,
   ClaimsRowLinkageType,
 } from '../lib/types'
 
@@ -75,6 +76,7 @@ type RowForm = {
   legal_summary_text: string
   internal_notes: string
   include_in_report: boolean
+  needs_manual_review: boolean
 }
 
 const defaultRowForm: RowForm = {
@@ -108,6 +110,7 @@ const defaultRowForm: RowForm = {
   legal_summary_text: '',
   internal_notes: '',
   include_in_report: true,
+  needs_manual_review: false,
 }
 
 function numOrNull(v: string): string | null {
@@ -149,6 +152,7 @@ function formToPayload(form: RowForm) {
     legal_summary_text: form.legal_summary_text || null,
     internal_notes: form.internal_notes || null,
     include_in_report: form.include_in_report,
+    needs_manual_review: form.needs_manual_review,
   }
 }
 
@@ -184,6 +188,7 @@ function rowToForm(row: ClaimsReportRowOut): RowForm {
     legal_summary_text: row.legal_summary_text || '',
     internal_notes: row.internal_notes || '',
     include_in_report: row.include_in_report,
+    needs_manual_review: row.needs_manual_review,
   }
 }
 
@@ -198,6 +203,7 @@ export function ClaimsReportDetailsPage() {
   const [filterCategory, setFilterCategory] = useState<ClaimsCategory | 'ALL'>('ALL')
   const [filterStatus, setFilterStatus] = useState<ClaimsReportCaseStatus | 'ALL'>('ALL')
   const [filterLinkage, setFilterLinkage] = useState<ClaimsRowLinkageType | 'ALL'>('ALL')
+  const [filterNeedsReview, setFilterNeedsReview] = useState<'ALL' | 'YES'>('ALL')
 
   const [showNewRow, setShowNewRow] = useState(false)
   const [newRowForm, setNewRowForm] = useState<RowForm>(defaultRowForm)
@@ -214,6 +220,12 @@ export function ClaimsReportDetailsPage() {
   const [importInclude, setImportInclude] = useState(true)
   const [isImporting, setIsImporting] = useState(false)
   const [isRefreshingLinked, setIsRefreshingLinked] = useState(false)
+  const [showSeedImport, setShowSeedImport] = useState(false)
+  const [isSeedImporting, setIsSeedImporting] = useState(false)
+  const [seedFileName, setSeedFileName] = useState('')
+  const [seedPayload, setSeedPayload] = useState<any>(null)
+  const [seedAllowAppend, setSeedAllowAppend] = useState(false)
+  const [seedAutoLink, setSeedAutoLink] = useState(true)
 
   const isFinal = report?.status === 'FINAL'
 
@@ -247,6 +259,7 @@ export function ClaimsReportDetailsPage() {
       if (filterCategory !== 'ALL' && r.category_for_report !== filterCategory) return false
       if (filterStatus !== 'ALL' && r.report_case_status !== filterStatus) return false
       if (filterLinkage !== 'ALL' && r.linkage_type !== filterLinkage) return false
+      if (filterNeedsReview === 'YES' && !r.needs_manual_review) return false
       if (!q) return true
       return (
         (r.case_title || '').toLowerCase().includes(q) ||
@@ -254,7 +267,7 @@ export function ClaimsReportDetailsPage() {
         (r.narrative_preview || '').toLowerCase().includes(q)
       )
     })
-  }, [rows, search, filterCategory, filterStatus, filterLinkage])
+  }, [rows, search, filterCategory, filterStatus, filterLinkage, filterNeedsReview])
 
   const kpis = useMemo(() => {
     const included = rows.filter((r) => r.include_in_report)
@@ -413,6 +426,49 @@ export function ClaimsReportDetailsPage() {
     }
   }
 
+  async function onPickSeedFile(file: File | null) {
+    if (!file) return
+    try {
+      const text = await file.text()
+      const parsed = JSON.parse(text)
+      setSeedPayload(parsed)
+      setSeedFileName(file.name)
+      setError(null)
+    } catch {
+      setSeedPayload(null)
+      setSeedFileName(file.name)
+      setError('קובץ JSON לא תקין')
+    }
+  }
+
+  async function importSeedJson() {
+    if (!seedPayload) {
+      setError('יש לבחור קובץ JSON תקין לפני ייבוא')
+      return
+    }
+    setIsSeedImporting(true)
+    try {
+      const result = await apiFetch<ClaimsSeedImportOut>(`/claims-reports/${id}/rows/import-seed-json`, {
+        method: 'POST',
+        body: JSON.stringify({
+          seed_payload: seedPayload,
+          seed_file_name: seedFileName || null,
+          allow_append: seedAllowAppend,
+          auto_link_cases: seedAutoLink,
+        }),
+      })
+      setShowSeedImport(false)
+      await load()
+      setError(
+        `ייבוא הושלם: נוצרו ${result.created_rows} רשומות (linked: ${result.linked_rows}, manual: ${result.manual_rows}, flagged: ${result.flagged_rows}, skipped: ${result.skipped_rows}).`,
+      )
+    } catch (e: any) {
+      setError(e?.message || 'שגיאה בייבוא seed JSON')
+    } finally {
+      setIsSeedImporting(false)
+    }
+  }
+
   if (!Number.isFinite(id)) {
     return (
       <div className="min-h-screen w-full px-6 py-10">
@@ -503,11 +559,16 @@ export function ClaimsReportDetailsPage() {
                     <option value="MANUAL">ידני</option>
                     <option value="LINKED">מקושר לתיק קיים</option>
                   </select>
+                  <select className="input h-11" value={filterNeedsReview} onChange={(e) => setFilterNeedsReview(e.target.value as 'ALL' | 'YES')}>
+                    <option value="ALL">כל הרשומות</option>
+                    <option value="YES">דורש בדיקה ידנית</option>
+                  </select>
                 </div>
                 <div className="flex gap-2">
                   <button className="btn btn-secondary" onClick={refreshAllLinkedRows} disabled={isRefreshingLinked}>
                     {isRefreshingLinked ? 'מרענן...' : 'רענון כל הרשומות המקושרות'}
                   </button>
+                  <button className="btn btn-secondary" onClick={() => setShowSeedImport(true)}>ייבוא Seed JSON</button>
                   <button className="btn btn-secondary" onClick={openImportCases}>הוסף מתיקים קיימים</button>
                   <button className="btn btn-primary" onClick={() => { setShowNewRow(true); setNewRowForm(defaultRowForm) }}>הוסף רשומה ידנית</button>
                 </div>
@@ -538,6 +599,8 @@ export function ClaimsReportDetailsPage() {
                           <div className="font-medium">{r.case_title || r.case_reference_text || `רשומה ${r.id}`}</div>
                           <div className="text-xs text-muted">{r.narrative_preview}</div>
                           <div className="text-xs text-muted mt-1">{r.linkage_type === 'LINKED' ? 'מקור: תיק קיים + שדות ידניים' : 'רשומה ידנית'}</div>
+                          {r.import_metadata_json ? <div className="text-xs text-primary mt-1">יובא מ-seed JSON</div> : null}
+                          {r.needs_manual_review ? <div className="text-xs text-amber-300">דורש בדיקה ידנית</div> : null}
                         </td>
                         <td className="py-2 px-2">{CATEGORY_LABEL[r.category_for_report]}</td>
                         <td className="py-2 px-2">{CASE_STATUS_LABEL[r.report_case_status]}</td>
@@ -644,6 +707,44 @@ export function ClaimsReportDetailsPage() {
               <button className="btn btn-secondary" onClick={() => setShowImportCases(false)} disabled={isImporting}>ביטול</button>
               <button className="btn btn-primary" onClick={importFromCases} disabled={isImporting || selectedCaseIds.size === 0}>
                 {isImporting ? 'מייבא...' : `ייבוא ${selectedCaseIds.size} תיקים`}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showSeedImport ? (
+        <div className="modal">
+          <div className="modal-overlay" onClick={() => !isSeedImporting && setShowSeedImport(false)} />
+          <div className="modal-panel max-w-3xl">
+            <div className="text-right">
+              <div className="text-lg font-semibold">ייבוא ראשוני מתוך Seed JSON</div>
+              <div className="text-sm text-muted mt-1">ייבוא יוצר רשומות חדשות בלבד (ללא דריסת רשומות קיימות).</div>
+            </div>
+            <div className="mt-4 space-y-3">
+              <div>
+                <label className="block text-sm text-muted mb-1 text-right">קובץ JSON</label>
+                <input
+                  className="input w-full"
+                  type="file"
+                  accept=".json,application/json"
+                  onChange={(e) => onPickSeedFile(e.target.files?.[0] || null)}
+                />
+                <div className="text-xs text-muted mt-1">{seedFileName ? `נבחר: ${seedFileName}` : 'לא נבחר קובץ'}</div>
+              </div>
+              <label className="flex items-center gap-2 justify-end text-sm">
+                <input type="checkbox" checked={seedAutoLink} onChange={(e) => setSeedAutoLink(e.target.checked)} />
+                לנסות auto-link שמרני לתיקים קיימים
+              </label>
+              <label className="flex items-center gap-2 justify-end text-sm">
+                <input type="checkbox" checked={seedAllowAppend} onChange={(e) => setSeedAllowAppend(e.target.checked)} />
+                לאפשר append גם אם כבר יש rows בדו"ח
+              </label>
+            </div>
+            <div className="mt-6 flex gap-2 justify-end">
+              <button className="btn btn-secondary" onClick={() => setShowSeedImport(false)} disabled={isSeedImporting}>ביטול</button>
+              <button className="btn btn-primary" onClick={importSeedJson} disabled={isSeedImporting || !seedPayload}>
+                {isSeedImporting ? 'מייבא...' : 'בצע ייבוא'}
               </button>
             </div>
           </div>
@@ -761,6 +862,10 @@ function RowEditorModal({
         <label className="flex items-center gap-2 mt-3 justify-end text-sm">
           <input type="checkbox" checked={form.include_in_report} onChange={(e) => onChange({ ...form, include_in_report: e.target.checked })} />
           לכלול בדו"ח
+        </label>
+        <label className="flex items-center gap-2 mt-2 justify-end text-sm">
+          <input type="checkbox" checked={form.needs_manual_review} onChange={(e) => onChange({ ...form, needs_manual_review: e.target.checked })} />
+          דורש בדיקה ידנית
         </label>
         {error ? <div className="mt-3 text-sm text-red-300 text-right">{error}</div> : null}
         <div className="mt-6 flex gap-2 justify-end">

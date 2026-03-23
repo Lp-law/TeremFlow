@@ -10,6 +10,8 @@ from app.schemas.claims_report import (
     ClaimsImportFromCasesOut,
     ClaimsImportFromCasesRequest,
     ClaimsRefreshLinkedRowsOut,
+    ClaimsSeedImportOut,
+    ClaimsSeedImportRequest,
     ClaimsReportCreate,
     ClaimsReportDetailsOut,
     ClaimsReportFinalizeOut,
@@ -124,6 +126,25 @@ def refresh_claims_report_row_from_case(
 def refresh_all_linked_rows(report_id: int, db: Session = Depends(get_db), user=Depends(require_auth)):
     refreshed, skipped = claims_service.refresh_all_linked_rows(db, report_id=report_id, user_id=user.id)
     return ClaimsRefreshLinkedRowsOut(refreshed_rows=refreshed, skipped_rows=skipped)
+
+
+@router.post("/{report_id}/rows/import-seed-json", response_model=ClaimsSeedImportOut)
+def import_seed_json_rows(
+    report_id: int,
+    payload: ClaimsSeedImportRequest,
+    db: Session = Depends(get_db),
+    user=Depends(require_auth),
+):
+    result = claims_service.import_rows_from_seed_json(
+        db,
+        report_id=report_id,
+        seed_payload=payload.seed_payload,
+        seed_file_name=payload.seed_file_name,
+        allow_append=payload.allow_append,
+        auto_link_cases=payload.auto_link_cases,
+        user_id=user.id,
+    )
+    return ClaimsSeedImportOut(**result)
 
 
 @router.post("/{report_id}/export/docx")

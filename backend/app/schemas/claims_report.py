@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 from decimal import Decimal
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -55,6 +56,7 @@ class ClaimsReportOut(BaseModel):
     created_at: dt.datetime
     updated_at: dt.datetime
     rows_count: int = 0
+    seed_import_metadata_json: dict[str, Any] | None = None
 
 
 class ClaimsReportFinalizeOut(BaseModel):
@@ -94,6 +96,7 @@ class ClaimsReportRowBase(BaseModel):
     legal_summary_text: str | None = None
     internal_notes: str | None = None
     include_in_report: bool = True
+    needs_manual_review: bool = False
 
 
 class ClaimsReportRowCreate(ClaimsReportRowBase):
@@ -131,6 +134,7 @@ class ClaimsReportRowUpdate(BaseModel):
     legal_summary_text: str | None = None
     internal_notes: str | None = None
     include_in_report: bool | None = None
+    needs_manual_review: bool | None = None
 
 
 class ClaimsReportRowOut(BaseModel):
@@ -168,8 +172,10 @@ class ClaimsReportRowOut(BaseModel):
     legal_summary_text: str | None
     internal_notes: str | None
     include_in_report: bool
+    needs_manual_review: bool
     last_synced_at: dt.datetime | None
     last_manual_update_at: dt.datetime | None
+    import_metadata_json: dict[str, Any] | None
     source_snapshot_json: dict | None
     created_at: dt.datetime
     updated_at: dt.datetime
@@ -190,6 +196,22 @@ class ClaimsImportFromCasesOut(BaseModel):
 class ClaimsRefreshLinkedRowsOut(BaseModel):
     refreshed_rows: int
     skipped_rows: int
+
+
+class ClaimsSeedImportRequest(BaseModel):
+    seed_payload: Any
+    seed_file_name: str | None = Field(default=None, max_length=260)
+    allow_append: bool = False
+    auto_link_cases: bool = True
+
+
+class ClaimsSeedImportOut(BaseModel):
+    created_rows: int
+    linked_rows: int
+    manual_rows: int
+    flagged_rows: int
+    skipped_rows: int
+    existing_rows_before: int
 
 
 class ClaimsReportDetailsOut(BaseModel):
