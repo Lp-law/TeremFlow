@@ -88,7 +88,7 @@ uvicorn app.main:app --reload --port 8000
 
 **משתמשים התחלתיים (לוקאל):**
 - `lidor` / `lidor123`
-- `iris` / `iris 123` (יש רווח)
+- `iris` / `iris123`
 - `lior` / `lior123`
 
 ### Frontend
